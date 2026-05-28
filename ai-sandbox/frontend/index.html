@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 沙盒行为洞察系统</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ==================== 入口页 ==================== -->
+  <div id="view-entry" class="view entry-view active">
+    <div class="entry-card">
+      <h1>AI 沙盒行为洞察系统</h1>
+      <p>通过实战任务评估候选人的 AI 协同能力</p>
+
+      <div id="entry-form" style="display:block">
+        <div class="form-group">
+          <label>候选人姓名</label>
+          <input type="text" class="form-input" id="input-name" placeholder="请输入姓名">
+        </div>
+        <div class="form-group">
+          <label>邮箱（可选）</label>
+          <input type="email" class="form-input" id="input-email" placeholder="选填">
+        </div>
+        <button class="btn btn-primary" style="width:100%" onclick="startSandbox()">进入沙盒</button>
+      </div>
+
+      <div id="entry-loading" style="display:none;text-align:center;padding:20px">
+        <div style="color:var(--text-accent)">正在准备沙盒环境...</div>
+      </div>
+    </div>
+
+    <div class="entry-links">
+      <a href="#admin">管理后台</a>
+    </div>
+  </div>
+
+  <!-- ==================== 沙盒主页 ==================== -->
+  <div id="view-sandbox" class="view">
+    <div class="app-container">
+      <!-- 顶栏 -->
+      <div class="top-bar">
+        <div style="display:flex;align-items:center;gap:16px">
+          <span class="top-bar-logo">AI SANDBOX</span>
+          <div class="stage-indicator">
+            <div class="stage-dot" id="stage-dot-1"></div>
+            <div class="stage-dot" id="stage-dot-2"></div>
+            <div class="stage-dot" id="stage-dot-3"></div>
+          </div>
+          <span id="stage-label" style="font-size:13px;color:var(--text-secondary)"></span>
+        </div>
+        <div class="top-bar-info">
+          <span id="candidate-name-display"></span>
+          <div class="timer" id="timer">00:00</div>
+        </div>
+      </div>
+
+      <!-- 主体 -->
+      <div class="main-content">
+        <!-- 左侧任务面板 -->
+        <div class="task-panel">
+          <div class="task-header">
+            <div class="stage-name" id="task-stage-name"></div>
+            <h2 id="task-title"></h2>
+          </div>
+          <div class="task-body">
+            <div class="task-description" id="task-description"></div>
+            <div class="task-eval-hint" id="task-eval-hint"></div>
+          </div>
+        </div>
+
+        <!-- 右侧工作区 -->
+        <div class="work-panel">
+          <!-- AI 聊天区 -->
+          <div class="chat-area">
+            <div class="chat-messages" id="chat-messages">
+              <!-- 消息将在这里动态添加 -->
+            </div>
+            <div class="chat-input-area">
+              <textarea class="chat-input" id="chat-input" placeholder="输入你的问题，按 Enter 发送..." rows="1"></textarea>
+              <button class="btn btn-primary send-btn" id="send-btn" onclick="handleSend()">发送</button>
+            </div>
+          </div>
+
+          <!-- 编辑区 -->
+          <div class="editor-panel">
+            <div class="editor-header">
+              <h3>你的分析文档</h3>
+              <div style="display:flex;gap:8px">
+                <span id="char-count" style="font-size:12px;color:var(--text-muted);line-height:34px">0 字</span>
+                <button class="btn btn-danger" style="padding:6px 16px;font-size:13px" onclick="submitTask()">提交任务</button>
+              </div>
+            </div>
+            <div class="editor-body">
+              <textarea class="editor-textarea" id="editor-textarea" placeholder="在这里整理你的分析和方案...&#10;&#10;你可以把 AI 助手返回的内容粘贴到这里进行编辑和整理。"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 管理后台 ==================== -->
+  <div id="view-admin" class="view admin-view">
+    <div class="admin-header">
+      <h1>管理后台</h1>
+      <button class="btn btn-ghost" onclick="location.hash=''">返回入口</button>
+    </div>
+
+    <!-- 登录 -->
+    <div id="admin-login" style="max-width:400px;margin:60px auto;padding:40px">
+      <h2 style="margin-bottom:16px">请输入管理密码</h2>
+      <div class="form-group">
+        <input type="password" class="form-input" id="admin-secret-input" placeholder="管理密码">
+      </div>
+      <button class="btn btn-primary" style="width:100%" onclick="adminLogin()">进入后台</button>
+    </div>
+
+    <!-- 候选人列表 -->
+    <div id="admin-list" style="display:none">
+      <div class="admin-body">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
+          <h2>候选人列表</h2>
+          <button class="btn btn-ghost btn-sm" onclick="refreshCandidateList()">刷新</button>
+        </div>
+        <div id="candidate-list-container"></div>
+      </div>
+    </div>
+
+    <!-- 候选人详情 -->
+    <div id="admin-detail" style="display:none">
+      <div class="report-header">
+        <button class="btn btn-ghost" onclick="showAdminList()">&#8592; 返回列表</button>
+        <h1 id="detail-title">行为详情</h1>
+      </div>
+      <div class="admin-body" id="detail-container"></div>
+    </div>
+
+    <!-- 报告页 -->
+    <div id="admin-report" style="display:none">
+      <div class="report-header">
+        <button class="btn btn-ghost" onclick="showAdminList()">&#8592; 返回列表</button>
+        <h1>评估报告</h1>
+      </div>
+      <div id="report-container"></div>
+    </div>
+  </div>
+
+  <!-- ==================== 突发事件弹窗 ==================== -->
+  <div class="overlay" id="event-overlay"></div>
+  <div class="event-popup" id="event-popup">
+    <div class="event-popup-header" id="popup-title"></div>
+    <div class="event-popup-body" id="popup-body"></div>
+    <div class="event-popup-footer">
+      <button class="btn btn-primary" onclick="closePopup()">我知道了</button>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/sandbox.js"></script>
+  <script src="js/ai-chat.js"></script>
+  <script src="js/admin.js"></script>
+  <script>
+    // ==================== 全局状态 ====================
+    let API_BASE = window.location.origin;
+    let currentToken = null;
+    let taskConfig = null;
+    let timerInterval = null;
+    let stageTimers = [];
+    let currentStage = 1;
+
+    // ==================== 路由 ====================
+    function route() {
+      const hash = location.hash;
+
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+
+      if (hash.startsWith('#admin')) {
+        document.getElementById('view-admin').classList.add('active');
+      } else {
+        document.getElementById('view-entry').classList.add('active');
+      }
+    }
+
+    window.addEventListener('hashchange', route);
+    route();
+
+    // ==================== 沙盒入口 ====================
+    async function startSandbox() {
+      const name = document.getElementById('input-name').value.trim();
+      if (!name) {
+        showToast('请输入姓名');
+        return;
+      }
+
+      document.getElementById('entry-form').style.display = 'none';
+      document.getElementById('entry-loading').style.display = 'block';
+
+      try {
+        // 1. 创建候选人
+        const resp = await fetch(`${API_BASE}/api/candidates`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: name,
+            email: document.getElementById('input-email').value.trim() || null
+          })
+        });
+
+        if (!resp.ok) throw new Error('创建失败');
+        const candidate = await resp.json();
+        currentToken = candidate.token;
+
+        // 2. 获取沙盒配置
+        const sandboxResp = await fetch(`${API_BASE}/api/sandbox/${currentToken}`);
+        if (!sandboxResp.ok) throw new Error('进入沙盒失败');
+        const sandbox = await sandboxResp.json();
+        taskConfig = sandbox.task;
+
+        // 3. 初始化 tracker 和 AI chat
+        window.tracker = new BehaviorTracker(sandbox.candidate_id, sandbox.session_id);
+        window.tracker.setToken(currentToken);
+
+        window.aiChat = new AIChat(document.getElementById('view-sandbox'), window.tracker);
+        window.aiChat.setToken(currentToken);
+
+        // 4. 切换到沙盒视图
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById('view-sandbox').classList.add('active');
+
+        document.getElementById('candidate-name-display').textContent = sandbox.candidate_name;
+
+        // 5. 加载第一阶段任务
+        loadStage(1);
+
+        // 6. 开始计时
+        startTimer();
+
+        // 7. 设置阶段计时器
+        setupStageTimers();
+
+        // 8. 记录任务开始
+        window.tracker.track('TASK_START');
+
+        // 9. 绑定编辑器事件
+        setupEditorTracking();
+
+        // 10. 绑定聊天输入
+        setupChatInput();
+
+      } catch (e) {
+        document.getElementById('entry-form').style.display = 'block';
+        document.getElementById('entry-loading').style.display = 'none';
+        showToast('启动失败: ' + e.message);
+      }
+    }
+
+    // ==================== 任务阶段管理 ====================
+    function loadStage(stageNum) {
+      currentStage = stageNum;
+      const stage = taskConfig.stages[stageNum - 1];
+      if (!stage) return;
+
+      // 更新 UI
+      document.getElementById('task-stage-name').textContent = `Stage ${stage.id}`;
+      document.getElementById('task-title').textContent = stage.name;
+      document.getElementById('task-description').innerHTML = formatDescription(stage.description);
+      document.getElementById('task-eval-hint').textContent = `评估维度: ${stage.evaluation_focus}`;
+      document.getElementById('stage-label').textContent = stage.name;
+
+      // 更新阶段指示器
+      for (let i = 1; i <= 3; i++) {
+        const dot = document.getElementById(`stage-dot-${i}`);
+        dot.classList.remove('active', 'completed');
+        if (i < stageNum) dot.classList.add('completed');
+        if (i === stageNum) dot.classList.add('active');
+      }
+
+      // 更新 tracker 和 AI chat 的阶段
+      window.tracker.setStage(stageNum);
+      window.aiChat.setStage(stageNum);
+
+      // 添加系统消息
+      window.aiChat.appendMessage('system', `=== Stage ${stageNum}: ${stage.name} ===\n\n${stage.description}`);
+    }
+
+    function formatDescription(text) {
+      return text
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/^>\s*(.+)$/gm, '<blockquote>$1</blockquote>')
+        .replace(/\n/g, '<br>');
+    }
+
+    function setupStageTimers() {
+      stageTimers.forEach(t => clearTimeout(t));
+      stageTimers = [];
+
+      taskConfig.stages.forEach((stage, index) => {
+        if (index === 0) return; // 第一阶段是开始时加载的
+
+        const autoTrigger = stage.auto_trigger_minutes;
+        if (autoTrigger) {
+          // 自动触发突发事件（从任务开始算）
+          const timer = setTimeout(() => {
+            if (currentStage >= index + 1) return; // 已经进入更后阶段
+            showEventPopup(stage.trigger_message, stage.name, index + 1);
+          }, autoTrigger * 60 * 1000);
+          stageTimers.push(timer);
+        }
+      });
+
+      // 阶段结束提醒
+      let accumMinutes = 0;
+      taskConfig.stages.forEach((stage, index) => {
+        const warning = stage.duration_minutes - taskConfig.time_warning_minutes;
+        const timer = setTimeout(() => {
+          if (currentStage === index + 1) {
+            window.aiChat.appendMessage('system', `⏰ Stage ${index + 1} 还剩 ${taskConfig.time_warning_minutes} 分钟`);
+          }
+        }, warning * 60 * 1000);
+        stageTimers.push(timer);
+      });
+    }
+
+    // ==================== 突发事件弹窗 ====================
+    function showEventPopup(message, title, nextStage) {
+      document.getElementById('popup-title').textContent = title || '突发事件';
+      document.getElementById('popup-body').textContent = message;
+      document.getElementById('event-overlay').classList.add('show');
+      document.getElementById('event-popup').classList.add('show');
+
+      // 关闭弹窗后切换到下一阶段
+      document.getElementById('event-popup')._nextStage = nextStage;
+    }
+
+    function closePopup() {
+      document.getElementById('event-overlay').classList.remove('show');
+      document.getElementById('event-popup').classList.remove('show');
+
+      const nextStage = document.getElementById('event-popup')._nextStage;
+      if (nextStage && nextStage !== currentStage) {
+        loadStage(nextStage);
+      }
+    }
+
+    // ==================== 计时器 ====================
+    function startTimer() {
+      const timerEl = document.getElementById('timer');
+      const totalMinutes = taskConfig.total_duration_minutes;
+
+      timerInterval = setInterval(() => {
+        if (!window.tracker) return;
+        const elapsed = window.tracker.getElapsedSeconds();
+        const remaining = totalMinutes * 60 - elapsed;
+
+        if (remaining <= 0) {
+          clearInterval(timerInterval);
+          timerEl.textContent = '00:00';
+          timerEl.classList.add('danger');
+          showToast('时间到！请提交你的任务。');
+          return;
+        }
+
+        const minutes = Math.floor(remaining / 60);
+        const seconds = remaining % 60;
+        timerEl.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+        timerEl.classList.remove('warning', 'danger');
+        if (remaining <= 120) timerEl.classList.add('danger');
+        else if (remaining <= 300) timerEl.classList.add('warning');
+      }, 1000);
+    }
+
+    // ==================== 聊天输入 ====================
+    function setupChatInput() {
+      const input = document.getElementById('chat-input');
+      const btn = document.getElementById('send-btn');
+
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          handleSend();
+        }
+      });
+
+      input.addEventListener('input', () => {
+        // 自动调整高度
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+      });
+    }
+
+    function handleSend() {
+      const input = document.getElementById('chat-input');
+      const text = input.value.trim();
+      if (!text) return;
+
+      window.aiChat.queueMessage(text);
+      input.value = '';
+      input.style.height = 'auto';
+    }
+
+    // ==================== 编辑器追踪 ====================
+    function setupEditorTracking() {
+      const textarea = document.getElementById('editor-textarea');
+      const charCount = document.getElementById('char-count');
+
+      let lastLength = 0;
+      let inputDebounce = null;
+
+      textarea.addEventListener('input', () => {
+        const len = textarea.value.length;
+        charCount.textContent = len + ' 字';
+
+        // 防抖记录文本输入事件
+        clearTimeout(inputDebounce);
+        inputDebounce = setTimeout(() => {
+          if (Math.abs(len - lastLength) > 5) {
+            window.tracker.trackTextInput(textarea.value.substring(0, 200), 'editor');
+          }
+          lastLength = len;
+        }, 500);
+      });
+
+      // 复制粘贴检测
+      textarea.addEventListener('paste', () => {
+        window.tracker.trackCopyPaste('paste', textarea.value.length);
+      });
+
+      textarea.addEventListener('copy', () => {
+        window.tracker.trackCopyPaste('copy', textarea.value.length);
+      });
+
+      // Tab 键切换检测
+      textarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+          window.tracker.track('TAB_SWITCH', { from: 'editor' });
+        }
+      });
+    }
+
+    // ==================== 提交任务 ====================
+    async function submitTask() {
+      if (!confirm('确认提交任务？提交后无法修改。')) return;
+
+      window.tracker.track('TASK_SUBMIT', {
+        final_output_length: document.getElementById('editor-textarea').value.length
+      });
+
+      try {
+        const resp = await fetch(`${API_BASE}/api/submit/${currentToken}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Token': currentToken
+          },
+          body: JSON.stringify({
+            final_output: document.getElementById('editor-textarea').value
+          })
+        });
+
+        if (!resp.ok) throw new Error('提交失败');
+
+        window.tracker.stopFlushing();
+        clearInterval(timerInterval);
+
+        document.getElementById('view-sandbox').innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:20px">
+            <div style="font-size:48px">&#10003;</div>
+            <h1 style="font-size:24px">任务已完成</h1>
+            <p style="color:var(--text-secondary);font-size:14px">感谢你的参与！评估团队将分析你的表现。</p>
+          </div>
+        `;
+
+      } catch (e) {
+        showToast('提交失败: ' + e.message);
+      }
+    }
+
+    // ==================== 管理后台 ====================
+    async function adminLogin() {
+      const secret = document.getElementById('admin-secret-input').value;
+      if (!secret) return;
+
+      const ok = await window.admin.login(secret);
+      if (ok) {
+        document.getElementById('admin-login').style.display = 'none';
+        await refreshCandidateList();
+      } else {
+        showToast('密码错误');
+      }
+    }
+
+    async function refreshCandidateList() {
+      try {
+        const candidates = await window.admin.getCandidates();
+        document.getElementById('admin-list').style.display = 'block';
+        document.getElementById('admin-detail').style.display = 'none';
+        document.getElementById('admin-report').style.display = 'none';
+        window.admin.renderCandidateList(candidates, document.getElementById('candidate-list-container'));
+      } catch (e) {
+        showToast('获取列表失败: ' + e.message);
+      }
+    }
+
+    function showAdminList() {
+      refreshCandidateList();
+    }
+
+    async function viewDetail(candidateId) {
+      try {
+        const data = await window.admin.getCandidateDetail(candidateId);
+        document.getElementById('admin-list').style.display = 'none';
+        document.getElementById('admin-detail').style.display = 'block';
+        document.getElementById('admin-report').style.display = 'none';
+        document.getElementById('detail-title').textContent = '行为详情 - ' + data.candidate.name;
+        window.admin.renderEventDetail(data, document.getElementById('detail-container'));
+      } catch (e) {
+        showToast('获取详情失败: ' + e.message);
+      }
+    }
+
+    async function triggerEvaluate(candidateId, name) {
+      if (!confirm(`确认评估候选人「${name}」？`)) return;
+      try {
+        const result = await window.admin.evaluateCandidate(candidateId);
+        showToast(`评估完成！级别: ${result.level}，综合得分: ${result.comprehensive_score}/16`);
+        await refreshCandidateList();
+      } catch (e) {
+        showToast('评估失败: ' + e.message);
+      }
+    }
+
+    async function viewReport(candidateId) {
+      try {
+        const data = await window.admin.getReport(candidateId);
+        document.getElementById('admin-list').style.display = 'none';
+        document.getElementById('admin-detail').style.display = 'none';
+        document.getElementById('admin-report').style.display = 'block';
+        window.admin.renderReport(data, document.getElementById('report-container'));
+      } catch (e) {
+        showToast('获取报告失败: ' + e.message);
+      }
+    }
+
+    // ==================== 工具函数 ====================
+    function showToast(message) {
+      const existing = document.querySelector('.toast');
+      if (existing) existing.remove();
+
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+
+      setTimeout(() => toast.remove(), 3000);
+    }
+  </script>
+</body>
+</html>
