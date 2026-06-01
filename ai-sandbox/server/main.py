@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Depends, Query, Header
+from fastapi import FastAPI, HTTPException, Depends, Query, Header, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 import config
 from models import (
     CandidateCreate, BehaviorEventBatch, AIChatRequest,
-    AIChatResponse, EvaluationResult
+    AIChatResponse, EvaluationResult, TaskSubmission
 )
 import database as db
 from services import ai_service, behavior_analyzer, evaluation_engine
@@ -29,6 +29,8 @@ app.add_middleware(
 
 # 前端静态文件
 frontend_dir = Path(config.FRONTEND_DIR)
+app.mount("/css", StaticFiles(directory=str(frontend_dir / "css")), name="css")
+app.mount("/js", StaticFiles(directory=str(frontend_dir / "js")), name="js")
 
 
 # === 依赖注入 ===
@@ -107,7 +109,7 @@ async def ai_chat(token: str, data: AIChatRequest):
 
     start_time = time.time()
 
-    # 调用通义千问 API
+    # 调用 AI 服务（DashScope / Ollama 双后端）
     response_text, contains_hallucination = await ai_service.chat_with_ai(
         data.message, data.stage, getattr(data, "conversation_id", None)
     )
@@ -130,12 +132,12 @@ async def ai_chat(token: str, data: AIChatRequest):
         response=response_text,
         response_time_ms=response_time_ms,
         contains_hallucination=contains_hallucination,
-        conversation_id=getattr(data, "conversation_id", f"conv_{secrets.token_hex(4)}")
+        conversation_id=data.conversation_id or f"conv_{secrets.token_hex(4)}"
     )
 
 
 @app.post("/api/submit/{token}")
-async def submit_task(token: str, body: dict = None):
+async def submit_task(token: str, submission: TaskSubmission = Body(default=None)):
     candidate = db.get_candidate_by_token(token)
     if not candidate:
         raise HTTPException(401, "无效的访问凭证")
@@ -143,14 +145,15 @@ async def submit_task(token: str, body: dict = None):
     db.update_candidate_status(candidate["id"], "completed")
 
     # 保存最终产出
-    if body and "final_output" in body:
+    final_output = submission.final_output if submission else ""
+    if final_output:
         db.save_events([{
             "candidate_id": candidate["id"],
             "session_id": "",
             "timestamp": db.now_iso(),
             "event_type": "TASK_SUBMIT",
             "stage": 3,
-            "metadata": {"final_output_length": len(body["final_output"])}
+            "metadata": {"final_output_length": len(final_output)}
         }])
 
     return {"status": "completed", "candidate_id": candidate["id"]}

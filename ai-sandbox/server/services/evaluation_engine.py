@@ -74,7 +74,7 @@ def _safe_find_events_by_stage(events: list[dict], stage: int) -> list[dict]:
     return [e for e in events if e.get("stage") == stage]
 
 
-def _safe_get_first(events: list[dict], event_type: str, stage: int = None) -> dict | None:
+def _safe_get_first(events: list[dict], event_type: str, stage: int = None):
     """安全获取第一个满足条件的事件。"""
     if not events:
         return None

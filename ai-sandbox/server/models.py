@@ -86,6 +86,12 @@ class AIChatResponse(BaseModel):
     conversation_id: str
 
 
+# === 任务提交 ===
+
+class TaskSubmission(BaseModel):
+    final_output: str = ""
+
+
 # === 评估 ===
 
 class DimensionScores(BaseModel):

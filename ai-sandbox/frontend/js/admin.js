@@ -91,11 +91,11 @@ class AdminPanel {
               <td style="font-size:12px;color:var(--text-muted)">${new Date(c.created_at).toLocaleString('zh-CN')}</td>
               <td>
                 <div style="display:flex;gap:8px">
-                  <button class="btn btn-ghost btn-sm" onclick="admin.viewDetail('${c.id}')">详情</button>
+                  <button class="btn btn-ghost btn-sm" data-action="viewDetail" data-id="${c.id}">详情</button>
                   ${c.status === 'completed' || c.status === 'testing' ?
-                    `<button class="btn btn-primary btn-sm" onclick="admin.triggerEvaluate('${c.id}', '${this.escapeHtml(c.name)}')">评估</button>` : ''}
+                    `<button class="btn btn-primary btn-sm" data-action="triggerEvaluate" data-id="${c.id}" data-name="${this.escapeHtml(c.name)}">评估</button>` : ''}
                   ${c.has_evaluation ?
-                    `<button class="btn btn-ghost btn-sm" onclick="admin.viewReport('${c.id}')" style="border-color:var(--accent);color:var(--accent)">报告</button>` : ''}
+                    `<button class="btn btn-ghost btn-sm" data-action="viewReport" data-id="${c.id}" style="border-color:var(--accent);color:var(--accent)">报告</button>` : ''}
                 </div>
               </td>
             </tr>
@@ -103,6 +103,33 @@ class AdminPanel {
         </tbody>
       </table>
     `;
+
+    // 事件委托：监听按钮点击
+    containerEl.onclick = (e) => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+      if (action === 'viewDetail') {
+        if (typeof window.viewDetail === 'function') {
+          window.viewDetail(id);
+        } else {
+          console.error('window.viewDetail is not defined');
+        }
+      } else if (action === 'triggerEvaluate') {
+        if (typeof window.triggerEvaluate === 'function') {
+          window.triggerEvaluate(id, btn.dataset.name || '');
+        } else {
+          console.error('window.triggerEvaluate is not defined');
+        }
+      } else if (action === 'viewReport') {
+        if (typeof window.viewReport === 'function') {
+          window.viewReport(id);
+        } else {
+          console.error('window.viewReport is not defined');
+        }
+      }
+    };
   }
 
   /**
