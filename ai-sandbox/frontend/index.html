@@ -289,20 +289,30 @@
 
     // ==================== 任务阶段管理 ====================
     function loadStage(stageNum) {
-      currentStage = stageNum;
       const stage = taskConfig.stages[stageNum - 1];
       if (!stage) return;
 
-      // 清空编辑器
+      // 切换阶段前保存当前阶段内容
       const textarea = document.getElementById('editor-textarea');
-      if (textarea) {
-        textarea.value = '';
-        const charCount = document.getElementById('char-count');
-        if (charCount) charCount.textContent = '0 字';
+      if (textarea && currentStage !== stageNum) {
+        stageContents[currentStage] = textarea.value;
       }
 
+      currentStage = stageNum;
+
+      // 加载新阶段的内容（已有保存则恢复，否则清空）
+      if (textarea) {
+        textarea.value = stageContents[stageNum] || '';
+        const charCount = document.getElementById('char-count');
+        if (charCount) charCount.textContent = (textarea.value.length || 0) + ' 字';
+      }
+
+      // 更新编辑器标题
+      const editorTitle = document.getElementById('editor-stage-title');
+      if (editorTitle) editorTitle.textContent = 'Stage ' + stageNum + ': ' + stage.name;
+
       // 更新 UI
-      document.getElementById('task-stage-name').textContent = `Stage ${stage.id}`;
+      document.getElementById('task-stage-name').textContent = 'Stage ' + stage.id;
       document.getElementById('task-title').textContent = stage.name;
       document.getElementById('task-description').innerHTML = formatDescription(stage.description);
       
@@ -313,7 +323,7 @@
 
       // 更新阶段指示器
       for (let i = 1; i <= 3; i++) {
-        const dot = document.getElementById(`stage-dot-${i}`);
+        const dot = document.getElementById('stage-dot-' + i);
         dot.classList.remove('active', 'completed');
         if (i < stageNum) dot.classList.add('completed');
         if (i === stageNum) dot.classList.add('active');
@@ -323,8 +333,10 @@
       window.tracker.setStage(stageNum);
       window.aiChat.setStage(stageNum);
 
-      // 添加系统消息
-      window.aiChat.appendMessage('system', `=== Stage ${stageNum}: ${stage.name} ===\n\n${stage.description}`);
+      // 添加系统消息（仅在首次进入时添加）
+      if (!stageContents[stageNum]) {
+        window.aiChat.appendMessage('system', '=== Stage ' + stageNum + ': ' + stage.name + ' ===\n\n' + stage.description);
+      }
     }
 
     function formatDescription(text) {
@@ -588,6 +600,43 @@
       });
     }
 
+    // ==================== 提交当前阶段 ====================
+    async function submitCurrentStage() {
+      if (!currentToken) {
+        showToast('会话已过期，请重新进入沙盒');
+        return;
+      }
+
+      const content = document.getElementById('editor-textarea').value;
+      if (!content.trim()) {
+        showToast('请先为当前阶段撰写内容');
+        return;
+      }
+
+      if (!confirm('确认提交 Stage ' + currentStage + ' 的内容？提交后可以随时修改。')) return;
+
+      try {
+        const resp = await fetch(API_BASE + '/api/stages/submit/' + currentToken, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Token': currentToken
+          },
+          body: JSON.stringify({
+            stage: currentStage,
+            content: content
+          })
+        });
+
+        if (!resp.ok) throw new Error('提交失败');
+
+        stageContents[currentStage] = content;
+        showToast('Stage ' + currentStage + ' 已提交保存！');
+      } catch (e) {
+        showToast('提交失败: ' + e.message);
+      }
+    }
+
     // ==================== 提交任务 ====================
     async function submitTask() {
       if (!currentToken) {
@@ -595,10 +644,14 @@
         return;
       }
 
-      if (!confirm('确认提交任务？提交后无法修改。')) return;
+      // 先保存当前阶段内容
+      const textarea = document.getElementById('editor-textarea');
+      stageContents[currentStage] = textarea ? textarea.value : '';
+
+      if (!confirm('确认提交全部任务？提交后无法修改。')) return;
 
       window.tracker.track('TASK_SUBMIT', {
-        final_output_length: document.getElementById('editor-textarea').value.length
+        final_output_length: textarea ? textarea.value.length : 0
       });
 
       try {
@@ -609,7 +662,7 @@
             'X-Token': currentToken
           },
           body: JSON.stringify({
-            final_output: document.getElementById('editor-textarea').value
+            final_output: textarea ? textarea.value : ''
           })
         });
 
