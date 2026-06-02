@@ -1110,3 +1110,113 @@ body {
   color: var(--text-secondary);
   line-height: 1.6;
 }
+
+/* === 公司背景资料面板 === */
+.company-bg-panel {
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+  overflow: hidden;
+}
+
+.company-bg-header {
+  padding: 10px 16px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-accent);
+  background: var(--bg-card);
+  user-select: none;
+}
+
+.company-bg-header:hover {
+  background: var(--bg-hover);
+}
+
+.company-bg-toggle {
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+
+.company-bg-toggle.collapsed {
+  transform: rotate(-90deg);
+}
+
+.company-bg-body {
+  padding: 16px;
+  font-size: 13px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.company-bg-section {
+  margin-bottom: 14px;
+}
+
+.company-bg-section:last-child {
+  margin-bottom: 0;
+}
+
+.company-bg-label {
+  font-weight: 600;
+  color: var(--text-accent);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.company-bg-text {
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.company-bg-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.company-bg-list li {
+  color: var(--text-secondary);
+  padding: 2px 0;
+  padding-left: 14px;
+  position: relative;
+  line-height: 1.5;
+}
+
+.company-bg-list li::before {
+  content: '▸';
+  position: absolute;
+  left: 0;
+  color: var(--text-accent);
+  font-size: 10px;
+}
+
+.company-bg-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.company-bg-metric {
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.company-bg-metric-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.company-bg-metric-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}

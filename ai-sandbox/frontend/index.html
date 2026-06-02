@@ -65,7 +65,16 @@
             <h2 id="task-title"></h2>
           </div>
           <div class="task-body" id="task-body">
-            <!-- 候选人上下文面板 -->
+            <!-- 公司背景资料面板 -->
+            <div id="company-bg-panel" class="company-bg-panel" style="display:none;margin-bottom:16px">
+              <div class="company-bg-header" onclick="toggleCompanyBg()">
+                <span>🏢 公司背景资料（点击展开/收起）</span>
+                <span class="company-bg-toggle" id="company-bg-toggle">▼</span>
+              </div>
+              <div class="company-bg-body" id="company-bg-body"></div>
+            </div>
+
+            <!-- 候选人角色面板 -->
             <div id="candidate-context-panel" class="context-panel" style="display:none;margin-bottom:16px"></div>
             
             <!-- 公文筐文档面板 -->
@@ -189,6 +198,9 @@
     let stageTimers = [];
     let currentStage = 1;
     let stageContents = {}; // 保存每个阶段的内容
+    let docContents = {}; // 保存每个文档的内容 {stage_num: {doc_id: content}}
+    let currentDocId = null; // 当前选中的文档ID
+    let companyBgExpanded = true; // 公司背景面板是否展开
 
     // ==================== 路由 ====================
     function route() {
@@ -292,23 +304,34 @@
       const stage = taskConfig.stages[stageNum - 1];
       if (!stage) return;
 
-      // 切换阶段前保存当前阶段内容
+      // 切换阶段前保存
       const textarea = document.getElementById('editor-textarea');
       if (textarea && currentStage !== stageNum) {
+        // 如果有公文筐文档，保存当前文档内容
+        if (currentDocId && docContents[currentStage]) {
+          docContents[currentStage][currentDocId] = textarea.value;
+        }
+        // 也保存到阶段内容作为备份
         stageContents[currentStage] = textarea.value;
       }
 
       currentStage = stageNum;
+      currentDocId = null; // 将在 renderInbasketDocuments 中重新设定
 
-      // 加载新阶段的内容（已有保存则恢复，否则清空）
+      // 加载新阶段的内容
       if (textarea) {
-        textarea.value = stageContents[stageNum] || '';
-        const charCount = document.getElementById('char-count');
-        if (charCount) charCount.textContent = (textarea.value.length || 0) + ' 字';
+        // 如果有公文筐文档，内容由 loadDocEditorContent 设置
+        // 否则使用 stageContents
+        var hasDocs = stage.inbasket_documents && Array.isArray(stage.inbasket_documents) && stage.inbasket_documents.length > 0;
+        if (!hasDocs) {
+          textarea.value = stageContents[stageNum] || '';
+          var charCount = document.getElementById('char-count');
+          if (charCount) charCount.textContent = (textarea.value.length || 0) + ' 字';
+        }
       }
 
       // 更新编辑器标题
-      const editorTitle = document.getElementById('editor-stage-title');
+      var editorTitle = document.getElementById('editor-stage-title');
       if (editorTitle) editorTitle.textContent = 'Stage ' + stageNum + ': ' + stage.name;
 
       // 更新 UI
@@ -318,12 +341,12 @@
       
       document.getElementById('stage-label').textContent = stage.name;
       
-      // 渲染公文筐文档
+      // 渲染公文筐文档（里面会调用 loadDocEditorContent）
       renderInbasketDocuments(stage.inbasket_documents);
 
       // 更新阶段指示器
-      for (let i = 1; i <= 3; i++) {
-        const dot = document.getElementById('stage-dot-' + i);
+      for (var i = 1; i <= 3; i++) {
+        var dot = document.getElementById('stage-dot-' + i);
         dot.classList.remove('active', 'completed');
         if (i < stageNum) dot.classList.add('completed');
         if (i === stageNum) dot.classList.add('active');
@@ -346,65 +369,154 @@
         .replace(/\n/g, '<br>');
     }
 
-    // 渲染候选人上下文
+    // 渲染候选人上下文 + 公司背景资料
     function renderCandidateContext(context) {
+      // 角色面板
       const panel = document.getElementById('candidate-context-panel');
-      if (!panel || !context) {
-        if (panel) panel.style.display = 'none';
-        return;
+      if (panel && context) {
+        let html = '<div class="context-title">🎭 您的角色</div>';
+        if (context.role) {
+          html += '<div class="context-role">' + context.role + '</div>';
+        }
+        if (context.reporting_line) {
+          html += '<div style="font-size:12px;color:var(--text-muted);margin-bottom:2px;">' + context.reporting_line + '</div>';
+        }
+        if (context.tenure) {
+          html += '<div style="font-size:12px;color:var(--text-muted);">' + context.tenure + '</div>';
+        }
+        panel.innerHTML = html;
+        panel.style.display = 'block';
+      }
+
+      // 公司背景资料面板
+      const bgPanel = document.getElementById('company-bg-panel');
+      const bgBody = document.getElementById('company-bg-body');
+      if (!bgPanel || !context || !context.company_profile) return;
+      
+      const cp = context.company_profile;
+      let bgHtml = '';
+      
+      // 关键指标
+      if (cp.key_metrics) {
+        bgHtml += '<div class="company-bg-section"><div class="company-bg-label">📊 关键数据</div>';
+        bgHtml += '<div class="company-bg-metrics">';
+        var metrics = cp.key_metrics;
+        for (var key in metrics) {
+          if (metrics.hasOwnProperty(key)) {
+            var label = key.replace(/_/g, ' ');
+            bgHtml += '<div class="company-bg-metric"><div class="company-bg-metric-label">' + label + '</div><div class="company-bg-metric-value">' + metrics[key] + '</div></div>';
+          }
+        }
+        bgHtml += '</div></div>';
       }
       
-      let html = '<div class="context-title">🎭 您的角色</div>';
-      if (context.role) {
-        html += '<div class="context-role">' + context.role + '</div>';
-      }
-      if (context.company_profile) {
-        if (context.company_profile.name) {
-          html += '<div class="context-company">' + context.company_profile.name + '</div>';
-        }
-        if (context.company_profile.industry) {
-          html += '<div class="context-industry">行业: ' + context.company_profile.industry + '</div>';
-        }
+      // 商业模式
+      if (cp.business_model) {
+        bgHtml += '<div class="company-bg-section"><div class="company-bg-label">💼 商业模式</div><div class="company-bg-text">' + cp.business_model + '</div></div>';
       }
       
-      panel.innerHTML = html;
-      panel.style.display = 'block';
+      // 组织架构
+      if (cp.org_structure) {
+        bgHtml += '<div class="company-bg-section"><div class="company-bg-label">🏗️ 组织架构</div><div class="company-bg-text">' + cp.org_structure + '</div></div>';
+      }
+      
+      // 战略矛盾
+      if (cp.strategic_tensions && cp.strategic_tensions.length > 0) {
+        bgHtml += '<div class="company-bg-section"><div class="company-bg-label">⚡ 战略矛盾</div><ul class="company-bg-list">';
+        cp.strategic_tensions.forEach(function(t) { bgHtml += '<li>' + t + '</li>'; });
+        bgHtml += '</ul></div>';
+      }
+      
+      // 近期事件
+      if (cp.recent_events && cp.recent_events.length > 0) {
+        bgHtml += '<div class="company-bg-section"><div class="company-bg-label">📅 近期关键事件</div><ul class="company-bg-list">';
+        cp.recent_events.forEach(function(e) { bgHtml += '<li>' + e + '</li>'; });
+        bgHtml += '</ul></div>';
+      }
+      
+      // 关键人物
+      if (context.key_relationships && context.key_relationships.length > 0) {
+        bgHtml += '<div class="company-bg-section"><div class="company-bg-label">👥 关键人物</div>';
+        context.key_relationships.forEach(function(p) {
+          bgHtml += '<div style="margin-bottom:8px;"><span style="font-weight:600;color:var(--text-primary);">' + p.person + '</span><br><span style="font-size:12px;color:var(--text-muted);">' + p.stance + '</span></div>';
+        });
+        bgHtml += '</div>';
+      }
+      
+      bgBody.innerHTML = bgHtml;
+      bgPanel.style.display = 'block';
+    }
+
+    function toggleCompanyBg() {
+      companyBgExpanded = !companyBgExpanded;
+      var body = document.getElementById('company-bg-body');
+      var toggle = document.getElementById('company-bg-toggle');
+      if (companyBgExpanded) {
+        body.style.display = 'block';
+        toggle.classList.remove('collapsed');
+      } else {
+        body.style.display = 'none';
+        toggle.classList.add('collapsed');
+      }
     }
 
     // 渲染公文筐文档
     function renderInbasketDocuments(documents) {
       const panel = document.getElementById('inbasket-panel');
       const tabsDiv = document.getElementById('inbox-tabs');
-      const contentDiv = document.getElementById('inbox-content');
       
       if (!panel || !documents || !Array.isArray(documents) || documents.length === 0) {
         if (panel) panel.style.display = 'none';
+        currentDocId = null;
         return;
       }
       
+      // 确保该阶段的文档内容存储存在
+      if (!docContents[currentStage]) {
+        docContents[currentStage] = {};
+      }
+
+      // 确定默认选中的文档
+      var activeId = currentDocId;
+      if (!activeId || !documents.find(function(d) { return d.id === activeId; })) {
+        activeId = documents[0].id;
+      }
+      currentDocId = activeId;
+      
       // 渲染标签页
-      let tabsHtml = '';
-      for (let idx = 0; idx < documents.length; idx++) {
-        const doc = documents[idx];
-        const senderLabel = doc.sender ? doc.sender : '邮件 ' + (idx + 1);
-        const activeClass = idx === 0 ? ' active' : '';
-        tabsHtml += '<div class="inbox-tab' + activeClass + '" data-idx="' + idx + '">' + senderLabel + '</div>';
+      var tabsHtml = '';
+      for (var idx = 0; idx < documents.length; idx++) {
+        var doc = documents[idx];
+        var senderLabel = doc.sender || ('邮件 ' + (idx + 1));
+        var activeClass = doc.id === currentDocId ? ' active' : '';
+        var hasContent = docContents[currentStage][doc.id] ? ' 📝' : '';
+        tabsHtml += '<div class="inbox-tab' + activeClass + '" data-doc-id="' + doc.id + '">' + senderLabel + hasContent + '</div>';
       }
       tabsDiv.innerHTML = tabsHtml;
       
-      // 渲染第一个文档
-      renderInbasketDoc(documents[0]);
+      // 渲染当前文档
+      var activeDoc = documents.find(function(d) { return d.id === currentDocId; });
+      if (activeDoc) renderInbasketDoc(activeDoc);
+      
+      // 加载当前文档的编辑器内容
+      loadDocEditorContent(currentDocId);
       
       // 绑定点击事件
-      const allTabs = tabsDiv.querySelectorAll('.inbox-tab');
+      var allTabs = tabsDiv.querySelectorAll('.inbox-tab');
       allTabs.forEach(function(tab) {
         tab.onclick = function(e) {
-          const idx = parseInt(e.target.getAttribute('data-idx'));
-          // 更新标签状态
+          var docId = e.target.getAttribute('data-doc-id');
+          // 保存当前文档内容
+          saveDocEditorContent(currentDocId);
+          // 更新选中状态
+          currentDocId = docId;
           allTabs.forEach(function(t) { t.classList.remove('active'); });
           e.target.classList.add('active');
           // 显示对应文档
-          renderInbasketDoc(documents[idx]);
+          var selDoc = documents.find(function(d) { return d.id === docId; });
+          if (selDoc) renderInbasketDoc(selDoc);
+          // 加载该文档的编辑器内容
+          loadDocEditorContent(docId);
         };
       });
       
@@ -415,7 +527,7 @@
       const contentDiv = document.getElementById('inbox-content');
       if (!contentDiv) return;
       
-      let html = '';
+      var html = '';
       if (doc.sender) {
         html += '<div class="inbox-doc-sender">' + doc.sender + '</div>';
       }
@@ -423,7 +535,7 @@
         html += '<div class="inbox-doc-subject">' + doc.subject + '</div>';
       }
       if (doc.date || doc.time) {
-        const metaParts = [];
+        var metaParts = [];
         if (doc.date) metaParts.push(doc.date);
         if (doc.time) metaParts.push(doc.time);
         html += '<div class="inbox-doc-meta">' + metaParts.join(' ') + '</div>';
@@ -431,8 +543,36 @@
       if (doc.content) {
         html += '<div class="inbox-doc-content">' + formatDescription(doc.content) + '</div>';
       }
+      // 指示当前正在编辑此文档
+      html += '<div style="margin-top:10px;padding:6px 10px;background:var(--accent-dim);border-radius:var(--radius-sm);font-size:12px;color:var(--text-accent);">✏️ 右侧编辑器当前对应此邮件 — 请撰写你的回复/分析方案</div>';
       
       contentDiv.innerHTML = html;
+    }
+
+    function saveDocEditorContent(docId) {
+      if (!docId) return;
+      if (!docContents[currentStage]) docContents[currentStage] = {};
+      var textarea = document.getElementById('editor-textarea');
+      docContents[currentStage][docId] = textarea ? textarea.value : '';
+    }
+
+    function loadDocEditorContent(docId) {
+      if (!docId) return;
+      if (!docContents[currentStage]) docContents[currentStage] = {};
+      var textarea = document.getElementById('editor-textarea');
+      if (textarea) {
+        textarea.value = docContents[currentStage][docId] || '';
+        var charCount = document.getElementById('char-count');
+        if (charCount) charCount.textContent = (textarea.value.length || 0) + ' 字';
+      }
+      // 更新编辑器标题
+      var editorTitle = document.getElementById('editor-stage-title');
+      var stage = taskConfig.stages[currentStage - 1];
+      if (editorTitle && stage) {
+        var doc = stage.inbasket_documents ? stage.inbasket_documents.find(function(d) { return d.id === docId; }) : null;
+        var docLabel = doc ? ' — ' + (doc.sender || doc.subject || '') : '';
+        editorTitle.textContent = 'Stage ' + currentStage + ': ' + stage.name + docLabel;
+      }
     }
 
     function setupStageTimers() {
@@ -607,8 +747,29 @@
         return;
       }
 
-      const content = document.getElementById('editor-textarea').value;
-      if (!content.trim()) {
+      // 先保存当前文档内容
+      saveDocEditorContent(currentDocId);
+
+      // 收集该阶段所有文档的内容
+      var stageAllContent = '';
+      var stage = taskConfig.stages[currentStage - 1];
+      if (stage && stage.inbasket_documents && stage.inbasket_documents.length > 0) {
+        // 有文档的阶段：合并所有文档内容
+        var parts = [];
+        stage.inbasket_documents.forEach(function(doc) {
+          var content = docContents[currentStage] && docContents[currentStage][doc.id] ? docContents[currentStage][doc.id] : '';
+          if (content.trim()) {
+            parts.push('## ' + (doc.sender || doc.subject || doc.id) + '\n\n' + content);
+          }
+        });
+        stageAllContent = parts.join('\n\n---\n\n');
+      } else {
+        // 无文档的阶段：使用编辑器内容
+        var textarea = document.getElementById('editor-textarea');
+        stageAllContent = textarea ? textarea.value : '';
+      }
+
+      if (!stageAllContent.trim()) {
         showToast('请先为当前阶段撰写内容');
         return;
       }
@@ -624,13 +785,13 @@
           },
           body: JSON.stringify({
             stage: currentStage,
-            content: content
+            content: stageAllContent
           })
         });
 
         if (!resp.ok) throw new Error('提交失败');
 
-        stageContents[currentStage] = content;
+        stageContents[currentStage] = stageAllContent;
         showToast('Stage ' + currentStage + ' 已提交保存！');
       } catch (e) {
         showToast('提交失败: ' + e.message);
@@ -644,25 +805,50 @@
         return;
       }
 
-      // 先保存当前阶段内容
-      const textarea = document.getElementById('editor-textarea');
+      // 保存当前文档和阶段内容
+      saveDocEditorContent(currentDocId);
+      var textarea = document.getElementById('editor-textarea');
       stageContents[currentStage] = textarea ? textarea.value : '';
+
+      // 构建完整的最终产出
+      var finalParts = [];
+      for (var s = 1; s <= taskConfig.stages.length; s++) {
+        var stage = taskConfig.stages[s - 1];
+        if (docContents[s] && Object.keys(docContents[s]).length > 0) {
+          // 有文档内容的阶段
+          var docParts = [];
+          if (stage.inbasket_documents) {
+            stage.inbasket_documents.forEach(function(doc) {
+              var c = docContents[s][doc.id] || '';
+              if (c.trim()) {
+                docParts.push('### ' + (doc.sender || doc.subject || doc.id) + '\n\n' + c);
+              }
+            });
+          }
+          if (docParts.length > 0) {
+            finalParts.push('## Stage ' + s + ': ' + stage.name + '\n\n' + docParts.join('\n\n---\n\n'));
+          }
+        } else if (stageContents[s]) {
+          finalParts.push('## Stage ' + s + ': ' + stage.name + '\n\n' + stageContents[s]);
+        }
+      }
+      var finalOutput = finalParts.join('\n\n');
 
       if (!confirm('确认提交全部任务？提交后无法修改。')) return;
 
       window.tracker.track('TASK_SUBMIT', {
-        final_output_length: textarea ? textarea.value.length : 0
+        final_output_length: finalOutput.length
       });
 
       try {
-        const resp = await fetch(`${API_BASE}/api/submit/${currentToken}`, {
+        const resp = await fetch(API_BASE + '/api/submit/' + currentToken, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'X-Token': currentToken
           },
           body: JSON.stringify({
-            final_output: textarea ? textarea.value : ''
+            final_output: finalOutput
           })
         });
 
