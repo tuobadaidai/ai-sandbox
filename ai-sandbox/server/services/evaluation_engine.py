@@ -534,17 +534,17 @@ def assess_confidence(scores: dict, average_score: float, contradictions: list) 
         contradictions: 矛盾信号列表
 
     Returns:
-        置信度评语字符串，包含等级与建议
+        置信度评语言字符串，包含等级与建议
     """
     comprehensive = average_score * 4
 
-    # ---- 极端区间：高分/低分必须标注 ----
+    # === 极端区间：高分/低分必须标注 ===
     if comprehensive >= 13:
         return "较高 - 综合得分处于高分区间，建议结合面试交叉验证确认"
     if comprehensive <= 7:
         return "较低 - 综合得分偏低，可能因任务不适应或环境因素影响"
 
-    # ---- 维度分差过大 ----
+    # === 维度分差过大 ===
     if scores:
         score_values = list(scores.values())
         if score_values:
@@ -552,7 +552,7 @@ def assess_confidence(scores: dict, average_score: float, contradictions: list) 
             if spread >= 2:
                 return "中等 - 维度分差较大，属非均衡型候选人，建议关注薄弱维度"
 
-    # ---- 矛盾信号数量 ----
+    # === 矛盾信号数量 ===
     contradiction_count = len(contradictions) if contradictions else 0
     if contradiction_count >= 3:
         return "需关注 - 存在多个行为矛盾信号，建议人工复核"
@@ -560,3 +560,119 @@ def assess_confidence(scores: dict, average_score: float, contradictions: list) 
         return "一般 - 存在少量行为信号，建议结合其他评估方式"
 
     return "较高 - 行为数据充足且一致性强"
+
+
+# ============================================================================
+# 协作风格与 CMMI 成熟度检测
+# ============================================================================
+
+def detect_collaboration_style(events: list[dict], interactions: list[dict]) -> str:
+    """
+    检测人机协作风格：Driver / Co-worker / Delegator / Operator
+
+    Args:
+        events: 行为事件列表
+        interactions: AI 交互记录列表
+
+    Returns:
+        协作风格字符串
+    """
+    # 统计指标
+    ai_prompts = [e for e in events if e.get("event_type") == "AI_PROMPT_SEND"]
+    text_inputs = [e for e in events if e.get("event_type") == "TEXT_INPUT"]
+    edits = [e for e in events if e.get("event_type") == "AI_OUTPUT_EDIT"]
+    accepts = [e for e in events if e.get("event_type") == "AI_OUTPUT_ACCEPT"]
+    
+    total_actions = len(ai_prompts) + len(text_inputs)
+    
+    if total_actions == 0:
+        return "Unknown"
+    
+    # Driver 型：人工编辑事件先于 AI 调用事件的比例 > 0.6
+    # 简化检测：TEXT_INPUT 比例高，且有较多 EDIT
+    text_input_ratio = len(text_inputs) / total_actions if total_actions > 0 else 0
+    edit_ratio = len(edits) / (len(edits) + len(accepts)) if (len(edits) + len(accepts)) > 0 else 0
+    
+    if text_input_ratio > 0.6 and edit_ratio > 0.3:
+        return "Driver"
+    
+    # Co-worker 型：追问次数 > 5 且编辑率 > 0.4
+    # 简化：多轮对话 + 较多编辑
+    follow_up_count = 0
+    for i in range(1, len(ai_prompts)):
+        curr_meta = ai_prompts[i].get("metadata", {})
+        if curr_meta.get("iteration") and curr_meta.get("iteration") > 1:
+            follow_up_count += 1
+    
+    if follow_up_count >= 3 and edit_ratio > 0.4:
+        return "Co-worker"
+    
+    # Delegator 型：单轮对话占比高，编辑率低
+    if follow_up_count == 0 and edit_ratio < 0.15:
+        return "Delegator"
+    
+    # Operator 型：默认
+    return "Operator"
+
+
+def detect_cmmi_maturity_level(events: list[dict], interactions: list[dict]) -> str:
+    """
+    检测 CMMI 成熟度等级（L1-L5）
+
+    Args:
+        events: 行为事件列表
+        interactions: AI 交互记录列表
+
+    Returns:
+        CMMI 成熟度等级字符串
+    """
+    prompts = [
+        e.get("metadata", {}).get("prompt_text", "") 
+        for e in events 
+        if e.get("event_type") == "AI_PROMPT_SEND"
+    ]
+    prompts = [p for p in prompts if p]
+    
+    if not prompts:
+        return "L1 - 基础提问者"
+    
+    # L5 检测：自行设计 AI 使用策略、定义信任边界、建立纠错机制
+    l5_keywords = [
+        "信任边界", "使用策略", "纠错机制", "验证流程",
+        " AI 原则", "使用规范", "质量标准", "风险控制"
+    ]
+    has_l5 = any(any(kw in p for kw in l5_keywords) for p in prompts)
+    if has_l5:
+        return "L5 - 人机协同体系设计者"
+    
+    # L4 检测：让 AI 扮演不同角色交叉验证、自我批判
+    l4_keywords = [
+        "扮演", "角色", "不同角度", "对立面", "自我批判",
+        "反驳", "质疑", "从反面看", "正反两方面"
+    ]
+    has_l4 = any(any(kw in p for kw in l4_keywords) for p in prompts)
+    if has_l4:
+        return "L4 - 多智能体管理者"
+    
+    # L3 检测：将任务拆分为多个子步骤分轮调度 AI
+    ai_prompts = [e for e in events if e.get("event_type") == "AI_PROMPT_SEND"]
+    if len(ai_prompts) >= 3:
+        # 检查是否有明显的分步骤调用
+        has_step_keywords = any(
+            any(kw in p for kw in ["第一步", "第二步", "接下来", "然后"]) 
+            for p in prompts
+        )
+        if has_step_keywords:
+            return "L3 - 人机工作流搭建者"
+    
+    # L2 检测：包含角色设定、格式约束、输出范围限定
+    l2_keywords = [
+        "你是", "作为", "请以", "格式", "JSON", "表格",
+        "列表", "不要", "仅限于", "范围"
+    ]
+    has_l2 = any(any(kw in p for kw in l2_keywords) for p in prompts)
+    if has_l2:
+        return "L2 - 结构化指令设计者"
+    
+    # L1：默认
+    return "L1 - 基础提问者"

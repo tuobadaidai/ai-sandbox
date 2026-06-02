@@ -655,6 +655,327 @@ def _clamp_score(score: float, min_val: float = 1.0, max_val: float = 3.5) -> fl
     return round(max(min_val, min(max_val, score)), 1)
 
 
+# ============================================================================
+# 新六维度评分框架（高管测评）
+# ============================================================================
+
+def calculate_new_dimension_scores(
+    events: list[dict], interactions: list[dict]
+) -> dict[str, float]:
+    """基于行为事件和 AI 交互计算新六维度评分（0-100分）。
+
+    六个维度:
+        problem_definition: 问题定义能力
+        task_decomposition: 任务拆解能力
+        information_acquisition: 信息获取能力
+        hypothesis_construction: 假设构建能力
+        hypothesis_correction: 假设修正能力
+        integrated_judgment: 综合判断力
+
+    参数:
+        events: 行为事件列表
+        interactions: AI 交互记录列表
+
+    返回:
+        包含六个维度得分的字典
+    """
+    parsed_events = _ensure_parsed_metadata(events)
+    
+    scores: dict[str, float] = {}
+    
+    scores["problem_definition"] = _calc_problem_definition(parsed_events, interactions)
+    scores["task_decomposition"] = _calc_task_decomposition_new(parsed_events, interactions)
+    scores["information_acquisition"] = _calc_information_acquisition(parsed_events, interactions)
+    scores["hypothesis_construction"] = _calc_hypothesis_construction(parsed_events, interactions)
+    scores["hypothesis_correction"] = _calc_hypothesis_correction(parsed_events, interactions)
+    scores["integrated_judgment"] = _calc_integrated_judgment(parsed_events, interactions)
+    
+    return scores
+
+
+def _calc_problem_definition(events: list[dict], interactions: list[dict]) -> float:
+    """问题定义能力：在模糊和矛盾信息中界定核心问题的能力。"""
+    score = 50.0  # 基础分
+    
+    # 获取所有 prompt
+    prompts = [
+        e.get("metadata", {}).get("prompt_text", "") 
+        for e in events 
+        if e.get("event_type") == "AI_PROMPT_SEND"
+    ]
+    prompts = [p for p in prompts if p]
+    
+    if not prompts:
+        return max(30.0, score)
+    
+    # 1. 检查是否包含问题界定关键词
+    problem_keywords = ["核心问题", "主要矛盾", "问题本质", "关键在于", "根本原因", "核心在于"]
+    has_problem_definition = any(
+        any(kw in p for kw in problem_keywords) 
+        for p in prompts
+    )
+    if has_problem_definition:
+        score += 20.0
+    
+    # 2. 检查是否对矛盾信息敏感
+    contradiction_keywords = ["矛盾", "冲突", "不一致", "有问题", "不对", "需要核实"]
+    has_contradiction_awareness = any(
+        any(kw in p for kw in contradiction_keywords) 
+        for p in prompts
+    )
+    if has_contradiction_awareness:
+        score += 15.0
+    
+    # 3. 检查首个 prompt 是否不是简单复述任务
+    first_prompt = prompts[0] if prompts else ""
+    if len(first_prompt) > 100 and first_prompt.strip():
+        score += 15.0
+    
+    return min(100.0, max(0.0, score))
+
+
+def _calc_task_decomposition_new(events: list[dict], interactions: list[dict]) -> float:
+    """任务拆解能力：将复杂问题拆解为可执行子任务的能力。"""
+    score = 40.0  # 基础分
+    
+    # 获取所有 prompt
+    prompts = [
+        e.get("metadata", {}).get("prompt_text", "") 
+        for e in events 
+        if e.get("event_type") == "AI_PROMPT_SEND"
+    ]
+    prompts = [p for p in prompts if p]
+    
+    if not prompts:
+        return max(20.0, score)
+    
+    # 1. 检查拆解关键词
+    decomposition_keywords = [
+        "第一步", "第二步", "第三步", "首先", "其次", "最后",
+        "1.", "2.", "3.", "阶段一", "阶段二", "阶段三",
+        "拆解为", "分解为", "分步骤", "分阶段"
+    ]
+    decomposition_count = sum(
+        1 for p in prompts 
+        if any(kw in p for kw in decomposition_keywords)
+    )
+    if decomposition_count >= 2:
+        score += 25.0
+    elif decomposition_count >= 1:
+        score += 15.0
+    
+    # 2. 检查是否有多轮分步骤调用
+    ai_prompts = [e for e in events if e.get("event_type") == "AI_PROMPT_SEND"]
+    if len(ai_prompts) >= 4:
+        score += 20.0
+    elif len(ai_prompts) >= 2:
+        score += 10.0
+    
+    # 3. 检查子任务之间的独立性
+    # 简单规则：如果 prompt 长度变化较大，说明在处理不同子任务
+    if len(prompts) >= 2:
+        lengths = [len(p) for p in prompts]
+        avg_length = sum(lengths) / len(lengths)
+        variance = sum((l - avg_length) ** 2 for l in lengths) / len(lengths)
+        if variance > 5000:  # 长度变化大
+            score += 15.0
+    
+    return min(100.0, max(0.0, score))
+
+
+def _calc_information_acquisition(events: list[dict], interactions: list[dict]) -> float:
+    """信息获取能力：主动搜集数据、追问细节、交叉验证的能力。"""
+    score = 40.0  # 基础分
+    
+    # 1. 检查追问行为（多轮对话）
+    ai_prompts = [e for e in events if e.get("event_type") == "AI_PROMPT_SEND"]
+    follow_up_count = 0
+    for i in range(1, len(ai_prompts)):
+        prev_meta = ai_prompts[i-1].get("metadata", {})
+        curr_meta = ai_prompts[i].get("metadata", {})
+        # 检查是否是追问（迭代标记）
+        if curr_meta.get("iteration") and curr_meta.get("iteration") > 1:
+            follow_up_count += 1
+    
+    if follow_up_count >= 3:
+        score += 25.0
+    elif follow_up_count >= 1:
+        score += 15.0
+    
+    # 2. 检查是否有验证关键词
+    verification_keywords = [
+        "核实", "验证", "确认", "交叉检查", "数据来源",
+        "准确吗", "对吗", "是吗", "真的吗"
+    ]
+    prompts = [
+        e.get("metadata", {}).get("prompt_text", "") 
+        for e in events 
+        if e.get("event_type") == "AI_PROMPT_SEND"
+    ]
+    has_verification = any(
+        any(kw in p for kw in verification_keywords) 
+        for p in prompts if p
+    )
+    if has_verification:
+        score += 20.0
+    
+    # 3. 检查 Stage 3 中的事实核查行为
+    stage3_events = [e for e in events if e.get("stage") == 3]
+    if stage3_events:
+        score += 15.0
+    
+    return min(100.0, max(0.0, score))
+
+
+def _calc_hypothesis_construction(events: list[dict], interactions: list[dict]) -> float:
+    """假设构建能力：在信息不完整时提出可验证假设的能力。"""
+    score = 35.0  # 基础分
+    
+    prompts = [
+        e.get("metadata", {}).get("prompt_text", "") 
+        for e in events 
+        if e.get("event_type") == "AI_PROMPT_SEND"
+    ]
+    prompts = [p for p in prompts if p]
+    
+    if not prompts:
+        return max(20.0, score)
+    
+    # 1. 检查假设相关关键词
+    hypothesis_keywords = [
+        "可能是", "推测", "假设", "如果", "假定", "猜想",
+        "初步判断", "倾向于认为", "有可能", "会不会是"
+    ]
+    hypothesis_count = sum(
+        1 for p in prompts 
+        if any(kw in p for kw in hypothesis_keywords)
+    )
+    
+    if hypothesis_count >= 3:
+        score += 30.0
+    elif hypothesis_count >= 1:
+        score += 20.0
+    
+    # 2. 检查是否有多个假设
+    multiple_hypothesis_keywords = ["两种可能", "几种可能性", "可能一", "可能二", "一方面", "另一方面"]
+    has_multiple = any(
+        any(kw in p for kw in multiple_hypothesis_keywords) 
+        for p in prompts
+    )
+    if has_multiple:
+        score += 20.0
+    
+    # 3. 检查是否有可验证的判断标准
+    verification_criteria_keywords = ["如果", "只要", "当", "验证方法", "判断标准"]
+    has_criteria = any(
+        any(kw in p for kw in verification_criteria_keywords) 
+        for p in prompts
+    )
+    if has_criteria:
+        score += 15.0
+    
+    return min(100.0, max(0.0, score))
+
+
+def _calc_hypothesis_correction(events: list[dict], interactions: list[dict]) -> float:
+    """假设修正能力：在新证据出现时主动修正或推翻先前假设的能力。"""
+    score = 40.0  # 基础分
+    
+    # 1. 检查 UNDO/REDO 行为（表明在调整思路）
+    undo_count = sum(
+        1 for e in events 
+        if e.get("event_type") == "UNDO_REDO"
+    )
+    if undo_count >= 3:
+        score += 20.0
+    elif undo_count >= 1:
+        score += 10.0
+    
+    # 2. 检查修正相关关键词
+    correction_keywords = [
+        "更正", "修正", "调整", "之前的想法", "重新考虑",
+        "推翻", "之前不对", "我错了", "看来不是"
+    ]
+    prompts = [
+        e.get("metadata", {}).get("prompt_text", "") 
+        for e in events 
+        if e.get("event_type") == "AI_PROMPT_SEND"
+    ]
+    has_correction = any(
+        any(kw in p for kw in correction_keywords) 
+        for p in prompts if p
+    )
+    if has_correction:
+        score += 25.0
+    
+    # 3. 检查是否有 AI_OUTPUT_EDIT（表明在调整输出）
+    edit_count = sum(
+        1 for e in events 
+        if e.get("event_type") == "AI_OUTPUT_EDIT"
+    )
+    if edit_count >= 2:
+        score += 15.0
+    elif edit_count >= 1:
+        score += 8.0
+    
+    return min(100.0, max(0.0, score))
+
+
+def _calc_integrated_judgment(events: list[dict], interactions: list[dict]) -> float:
+    """综合判断力：在多方信息、利益冲突和不确定性中做出合理决策的能力。"""
+    score = 35.0  # 基础分
+    
+    prompts = [
+        e.get("metadata", {}).get("prompt_text", "") 
+        for e in events 
+        if e.get("event_type") == "AI_PROMPT_SEND"
+    ]
+    prompts = [p for p in prompts if p]
+    
+    if not prompts:
+        return max(20.0, score)
+    
+    # 1. 检查权衡关键词
+    tradeoff_keywords = [
+        "权衡", "平衡", "利弊", "优缺点", "风险", "收益",
+        "一方面", "另一方面", "虽然", "但是", "然而"
+    ]
+    tradeoff_count = sum(
+        1 for p in prompts 
+        if any(kw in p for kw in tradeoff_keywords)
+    )
+    if tradeoff_count >= 2:
+        score += 25.0
+    elif tradeoff_count >= 1:
+        score += 15.0
+    
+    # 2. 检查是否考虑多方利益
+    stakeholder_keywords = [
+        " CEO ", " CFO ", " 团队", " 客户", " 供应商",
+        " 股东", " 员工", " 管理层", "利益相关方"
+    ]
+    has_stakeholder = any(
+        any(kw in p for kw in stakeholder_keywords) 
+        for p in prompts
+    )
+    if has_stakeholder:
+        score += 20.0
+    
+    # 3. 检查是否有明确的决策理由
+    reasoning_keywords = [
+        "因为", "所以", "因此", "基于", "考虑到", "鉴于",
+        "理由是", "原因在于", "判断依据"
+    ]
+    has_reasoning = any(
+        any(kw in p for kw in reasoning_keywords) 
+        for p in prompts
+    )
+    if has_reasoning:
+        score += 20.0
+    
+    return min(100.0, max(0.0, score))
+
+
 def _ensure_parsed_metadata(events: list[dict]) -> list[dict]:
     """确保事件列表中的 metadata 字段是 dict 类型。
 

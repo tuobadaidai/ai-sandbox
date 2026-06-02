@@ -64,7 +64,17 @@
             <div class="stage-name" id="task-stage-name"></div>
             <h2 id="task-title"></h2>
           </div>
-          <div class="task-body">
+          <div class="task-body" id="task-body">
+            <!-- 候选人上下文面板 -->
+            <div id="candidate-context-panel" class="context-panel" style="display:none;margin-bottom:16px"></div>
+            
+            <!-- 公文筐文档面板 -->
+            <div id="inbasket-panel" class="inbasket-panel" style="display:none;margin-bottom:16px">
+              <div style="font-weight:bold;margin-bottom:12px;">📥 公文筐邮件</div>
+              <div class="inbox-tabs" id="inbox-tabs"></div>
+              <div class="inbox-content" id="inbox-content"></div>
+            </div>
+            
             <div class="task-description" id="task-description"></div>
           </div>
         </div>
@@ -85,10 +95,11 @@
           <!-- 编辑区 -->
           <div class="editor-panel">
             <div class="editor-header">
-              <h3>你的分析文档</h3>
+              <h3 id="editor-stage-title">你的分析文档</h3>
               <div style="display:flex;gap:8px">
                 <span id="char-count" style="font-size:12px;color:var(--text-muted);line-height:34px">0 字</span>
-                <button class="btn btn-danger" style="padding:6px 16px;font-size:13px" onclick="submitTask()">提交任务</button>
+                <button class="btn btn-primary" id="btn-submit-stage" style="padding:6px 16px;font-size:13px" onclick="submitCurrentStage()">提交本阶段</button>
+                <button class="btn btn-danger" style="padding:6px 16px;font-size:13px" onclick="submitTask()">提交全部任务</button>
               </div>
             </div>
             <div class="editor-body">
@@ -177,6 +188,7 @@
     let timerInterval = null;
     let stageTimers = [];
     let currentStage = 1;
+    let stageContents = {}; // 保存每个阶段的内容
 
     // ==================== 路由 ====================
     function route() {
@@ -229,6 +241,10 @@
         if (taskConfig && taskConfig.stages) {
           taskConfig.stages.forEach(s => { delete s.evaluation_focus; });
         }
+        // 加载已有的阶段提交
+        if (sandbox.stage_submissions) {
+          stageContents = { ...sandbox.stage_submissions };
+        }
 
         // 3. 初始化 tracker 和 AI chat
         window.tracker = new BehaviorTracker(sandbox.candidate_id, sandbox.session_id);
@@ -242,6 +258,9 @@
         document.getElementById('view-sandbox').classList.add('active');
 
         document.getElementById('candidate-name-display').textContent = sandbox.candidate_name;
+
+        // 渲染候选人上下文
+        renderCandidateContext(taskConfig.candidate_context);
 
         // 5. 加载第一阶段任务
         loadStage(1);
@@ -288,6 +307,9 @@
       document.getElementById('task-description').innerHTML = formatDescription(stage.description);
       
       document.getElementById('stage-label').textContent = stage.name;
+      
+      // 渲染公文筐文档
+      renderInbasketDocuments(stage.inbasket_documents);
 
       // 更新阶段指示器
       for (let i = 1; i <= 3; i++) {
@@ -310,6 +332,95 @@
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/^>\s*(.+)$/gm, '<blockquote>$1</blockquote>')
         .replace(/\n/g, '<br>');
+    }
+
+    // 渲染候选人上下文
+    function renderCandidateContext(context) {
+      const panel = document.getElementById('candidate-context-panel');
+      if (!panel || !context) {
+        if (panel) panel.style.display = 'none';
+        return;
+      }
+      
+      let html = '<div class="context-title">🎭 您的角色</div>';
+      if (context.role) {
+        html += '<div class="context-role">' + context.role + '</div>';
+      }
+      if (context.company_profile) {
+        if (context.company_profile.name) {
+          html += '<div class="context-company">' + context.company_profile.name + '</div>';
+        }
+        if (context.company_profile.industry) {
+          html += '<div class="context-industry">行业: ' + context.company_profile.industry + '</div>';
+        }
+      }
+      
+      panel.innerHTML = html;
+      panel.style.display = 'block';
+    }
+
+    // 渲染公文筐文档
+    function renderInbasketDocuments(documents) {
+      const panel = document.getElementById('inbasket-panel');
+      const tabsDiv = document.getElementById('inbox-tabs');
+      const contentDiv = document.getElementById('inbox-content');
+      
+      if (!panel || !documents || !Array.isArray(documents) || documents.length === 0) {
+        if (panel) panel.style.display = 'none';
+        return;
+      }
+      
+      // 渲染标签页
+      let tabsHtml = '';
+      for (let idx = 0; idx < documents.length; idx++) {
+        const doc = documents[idx];
+        const senderLabel = doc.sender ? doc.sender : '邮件 ' + (idx + 1);
+        const activeClass = idx === 0 ? ' active' : '';
+        tabsHtml += '<div class="inbox-tab' + activeClass + '" data-idx="' + idx + '">' + senderLabel + '</div>';
+      }
+      tabsDiv.innerHTML = tabsHtml;
+      
+      // 渲染第一个文档
+      renderInbasketDoc(documents[0]);
+      
+      // 绑定点击事件
+      const allTabs = tabsDiv.querySelectorAll('.inbox-tab');
+      allTabs.forEach(function(tab) {
+        tab.onclick = function(e) {
+          const idx = parseInt(e.target.getAttribute('data-idx'));
+          // 更新标签状态
+          allTabs.forEach(function(t) { t.classList.remove('active'); });
+          e.target.classList.add('active');
+          // 显示对应文档
+          renderInbasketDoc(documents[idx]);
+        };
+      });
+      
+      panel.style.display = 'block';
+    }
+    
+    function renderInbasketDoc(doc) {
+      const contentDiv = document.getElementById('inbox-content');
+      if (!contentDiv) return;
+      
+      let html = '';
+      if (doc.sender) {
+        html += '<div class="inbox-doc-sender">' + doc.sender + '</div>';
+      }
+      if (doc.subject) {
+        html += '<div class="inbox-doc-subject">' + doc.subject + '</div>';
+      }
+      if (doc.date || doc.time) {
+        const metaParts = [];
+        if (doc.date) metaParts.push(doc.date);
+        if (doc.time) metaParts.push(doc.time);
+        html += '<div class="inbox-doc-meta">' + metaParts.join(' ') + '</div>';
+      }
+      if (doc.content) {
+        html += '<div class="inbox-doc-content">' + formatDescription(doc.content) + '</div>';
+      }
+      
+      contentDiv.innerHTML = html;
     }
 
     function setupStageTimers() {

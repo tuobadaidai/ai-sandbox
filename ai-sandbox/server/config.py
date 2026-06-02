@@ -13,7 +13,7 @@ SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
 SERVER_PORT = int(os.getenv("SERVER_PORT", "8000"))
 
 # === 任务配置 ===
-DEFAULT_TASK = os.getenv("DEFAULT_TASK", "task_v1.json")
+DEFAULT_TASK = os.getenv("DEFAULT_TASK", "task_v3_valid.json")
 
 # === 管理后台 ===
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "sandbox-admin-2026")

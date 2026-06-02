@@ -159,6 +159,25 @@ class AdminPanel {
       problem_modeling: '#06b6d4'
     };
 
+    // 新六维度标签
+    const newDimensionLabels = {
+      problem_definition: '问题定义能力',
+      task_decomposition: '任务拆解能力',
+      information_acquisition: '信息获取能力',
+      hypothesis_construction: '假设构建能力',
+      hypothesis_correction: '假设修正能力',
+      integrated_judgment: '综合判断力'
+    };
+
+    const newDimensionColors = {
+      problem_definition: '#06b6d4',
+      task_decomposition: '#a855f7',
+      information_acquisition: '#10b981',
+      hypothesis_construction: '#f59e0b',
+      hypothesis_correction: '#ec4899',
+      integrated_judgment: '#0ea5e9'
+    };
+
     containerEl.innerHTML = `
       <div class="report-body">
         <!-- 综合结果 -->
@@ -166,11 +185,36 @@ class AdminPanel {
           <div class="level">${evaluation.level}</div>
           <div class="score">综合得分 ${evaluation.comprehensive_score}/16 &nbsp;|&nbsp; 平均分 ${evaluation.average_score}/4</div>
           <div style="margin-top:12px;font-size:13px;color:var(--text-muted)">置信度: ${evaluation.confidence}</div>
+          ${evaluation.collaboration_style ? `<div style="margin-top:8px;font-size:13px;color:var(--text-accent)">协作风格: ${evaluation.collaboration_style}</div>` : ''}
+          ${evaluation.cmmi_maturity_level ? `<div style="margin-top:4px;font-size:13px;color:var(--text-accent)">CMMI成熟度: ${evaluation.cmmi_maturity_level}</div>` : ''}
         </div>
 
-        <!-- 六维度评分 -->
+        <!-- 新六维度评分（高管测评） -->
+        ${evaluation.new_dimension_scores ? `
         <div class="report-section" style="margin-top:32px">
-          <h2>六维度能力评分</h2>
+          <h2>新六维度能力评分（0-100分）</h2>
+          <div class="score-grid">
+            ${Object.entries(newDimensionLabels).map(([key, label]) => {
+              const value = evaluation.new_dimension_scores[key] || 0;
+              const pct = value;
+              const color = newDimensionColors[key];
+              return `
+                <div class="score-card">
+                  <div class="label">${label}</div>
+                  <div class="value" style="color:${color}">${value.toFixed(0)}</div>
+                  <div class="bar">
+                    <div class="bar-fill" style="width:${pct}%;background:${color}"></div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+        ` : ''}
+
+        <!-- 旧六维度评分 -->
+        <div class="report-section" style="margin-top:32px">
+          <h2>六维度能力评分（1-4分）</h2>
           <div class="score-grid">
             ${Object.entries(dimensionLabels).map(([key, label]) => {
               const value = scores[key] || 0;

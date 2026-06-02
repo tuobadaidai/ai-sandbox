@@ -13,7 +13,8 @@ from fastapi.staticfiles import StaticFiles
 import config
 from models import (
     CandidateCreate, BehaviorEventBatch, AIChatRequest,
-    AIChatResponse, EvaluationResult, TaskSubmission
+    AIChatResponse, EvaluationResult, TaskSubmission,
+    StageSubmission, StageSubmissionResponse
 )
 import database as db
 from services import ai_service, behavior_analyzer, evaluation_engine
@@ -82,11 +83,16 @@ async def get_sandbox(token: str):
     with open(task_path, "r", encoding="utf-8") as f:
         task_config = json.load(f)
 
+    # 获取已有的阶段提交
+    stage_submissions = db.get_all_stage_submissions(candidate["id"])
+    stage_submissions_dict = {s["stage"]: s["content"] for s in stage_submissions}
+
     return {
         "candidate_id": candidate["id"],
         "candidate_name": candidate["name"],
         "task": task_config,
-        "session_id": f"sess_{secrets.token_hex(4)}"
+        "session_id": f"sess_{secrets.token_hex(4)}",
+        "stage_submissions": stage_submissions_dict
     }
 
 
@@ -134,6 +140,26 @@ async def ai_chat(token: str, data: AIChatRequest):
         contains_hallucination=contains_hallucination,
         conversation_id=data.conversation_id or f"conv_{secrets.token_hex(4)}"
     )
+
+
+@app.post("/api/stages/submit/{token}")
+async def submit_stage(token: str, submission: StageSubmission):
+    candidate = db.get_candidate_by_token(token)
+    if not candidate:
+        raise HTTPException(401, "无效的访问凭证")
+
+    db.save_stage_submission(candidate["id"], submission.stage, submission.content)
+
+    db.save_events([{
+        "candidate_id": candidate["id"],
+        "session_id": "",
+        "timestamp": db.now_iso(),
+        "event_type": "STAGE_SUBMIT",
+        "stage": submission.stage,
+        "metadata": {"content_length": len(submission.content)}
+    }])
+
+    return {"status": "saved", "candidate_id": candidate["id"], "stage": submission.stage}
 
 
 @app.post("/api/submit/{token}")
@@ -197,16 +223,23 @@ async def admin_evaluate(candidate_id: str, _=Depends(verify_admin)):
     # 1. 翻译行为数据为叙事文本
     narrative = behavior_analyzer.translate_to_narrative(events, interactions, candidate)
 
-    # 2. 计算六维度分数
+    # 2. 计算六维度分数（旧版）
     scores = behavior_analyzer.calculate_dimension_scores(events, interactions)
 
-    # 3. 矛盾检测
+    # 3. 计算新六维度评分（高管测评）
+    new_scores = behavior_analyzer.calculate_new_dimension_scores(events, interactions)
+
+    # 4. 矛盾检测
     contradictions = evaluation_engine.detect_contradictions(events, interactions)
 
-    # 4. 生成认知画像
+    # 5. 生成认知画像
     cognitive_profile = evaluation_engine.generate_cognitive_profile(events, interactions, scores)
 
-    # 5. 计算综合得分和级别
+    # 6. 检测协作风格和 CMMI 成熟度
+    collaboration_style = evaluation_engine.detect_collaboration_style(events, interactions)
+    cmmi_maturity = evaluation_engine.detect_cmmi_maturity_level(events, interactions)
+
+    # 7. 计算综合得分和级别（旧版）
     average_score = sum([
         scores["ai_fluency"], scores["human_ai_judgment"],
         scores["architecture_design"], scores["hybrid_orchestration"],
@@ -218,7 +251,7 @@ async def admin_evaluate(candidate_id: str, _=Depends(verify_admin)):
     level = behavior_analyzer.determine_level(average_score)
     confidence = evaluation_engine.assess_confidence(scores, average_score, contradictions)
 
-    # 保存评估结果
+    # 保存评估结果（包含新旧评分）
     db.save_evaluation(
         candidate_id=candidate_id,
         narrative=narrative,
@@ -228,7 +261,10 @@ async def admin_evaluate(candidate_id: str, _=Depends(verify_admin)):
         average_score=round(average_score, 2),
         comprehensive_score=round(comprehensive_score, 1),
         level=level,
-        confidence=confidence
+        confidence=confidence,
+        new_dimension_scores=new_scores,
+        collaboration_style=collaboration_style,
+        cmmi_maturity_level=cmmi_maturity
     )
 
     return {
@@ -246,12 +282,14 @@ async def admin_get_report(candidate_id: str, _=Depends(verify_admin)):
         raise HTTPException(404, "候选人不存在")
 
     evaluation = db.get_evaluation(candidate_id)
+    stage_submissions = db.get_all_stage_submissions(candidate_id)
     if not evaluation:
         raise HTTPException(404, "尚未评估，请先触发评估")
 
     return {
         "candidate": candidate,
-        "evaluation": evaluation
+        "evaluation": evaluation,
+        "stage_submissions": stage_submissions
     }
 
 

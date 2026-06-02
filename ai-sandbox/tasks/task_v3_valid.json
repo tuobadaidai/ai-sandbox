@@ -1,0 +1,75 @@
+{
+  "id": "task_v3_exec",
+  "name": "高管AI协同能力测评",
+  "description": "基于评鉴中心方法论的高级管理人员AI协同能力综合测评。公文筐测试+嵌入式研究报告任务的混杂模式。",
+  "total_duration_minutes": 90,
+  "candidate_context": {
+    "role": "集团战略与运营高级副总裁",
+    "company_profile": {
+      "name": "远游通集团",
+      "industry": "跨境B2B旅游分销"
+    }
+  },
+  "stages": [
+    {
+      "id": 1,
+      "name": "公文筐+嵌入式研究报告",
+      "duration_minutes": 40,
+      "description": "# 背景\n\n你是 **远游通集团** 的 **集团战略与运营高级副总裁**，入职4个月。\n\n周一早上8:30，你的收件箱积压了8封周末邮件。\n\n你的任务：使用AI助手处理这些信息，在下方编辑区产出分析方案。",
+      "inbasket_documents": [
+        {
+          "id": "doc_1",
+          "sender": "CFO 林敏",
+          "subject": "紧急：亚太区Q3亏损扩大",
+          "date": "2026-06-01",
+          "time": "09:00",
+          "content": "亚太区Q3实际亏损超出预算60%。请在明天中午前提交：1) 亏损根因分析 2) Q4止损方案 3) 对赌协议影响评估"
+        },
+        {
+          "id": "doc_2",
+          "sender": "供应链中心VP 何志远",
+          "subject": "核心酒店集团威胁撤签",
+          "date": "2026-06-01",
+          "time": "09:30",
+          "content": "AI定价引擎对部分核心酒店自动降价，对方发来正式函件：如果不能在一周内恢复原协议价，将终止独家分销"
+        },
+        {
+          "id": "doc_3",
+          "sender": "CEO 周远航",
+          "subject": "收购欧洲旅游科技公司？",
+          "date": "2026-06-02",
+          "time": "08:00",
+          "content": "周末见了投资人，提议收购一家欧洲B2B旅游科技公司TripSync。周三董事会可能会提，你准备几页材料"
+        },
+        {
+          "id": "doc_4",
+          "sender": "亚太区HRBP 王琳",
+          "subject": "核心团队稳定性预警",
+          "date": "2026-06-02",
+          "time": "08:15",
+          "content": "亚太区GM离职后，泰国和越南负责人都有意向离职。泰国负责人手握最大的三个客户"
+        }
+      ],
+      "evaluation_focus": "问题定义、任务拆解、信息获取、假设构建与修正、综合判断能力"
+    },
+    {
+      "id": 2,
+      "name": "商业模拟+角色扮演",
+      "duration_minutes": 30,
+      "auto_trigger_minutes": 25,
+      "trigger_message": "【董事会反馈】\n\nAI战略方向基本认可，但CFO要求先在亚太区试点，ROI达标再推广。\n\n试点第2周，三个事件陆续触发...",
+      "description": "继续与AI协作，处理动态事件。关键是：如何在多方利益冲突中做出平衡决策",
+      "evaluation_focus": "假设修正能力、综合判断能力、AI协同策略"
+    },
+    {
+      "id": 3,
+      "name": "事实发现与对抗测试",
+      "duration_minutes": 20,
+      "description": "Atlas自动生成了试点总结报告，但你注意到数据可能有问题。对AI保持警惕！",
+      "evaluation_focus": "信息获取与验证能力、假设修正能力",
+      "hallucination_active": true
+    }
+  ],
+  "submission_prompt": "任务完成！请确认最终产出，然后点击「提交任务」",
+  "time_warning_minutes": 5
+}
