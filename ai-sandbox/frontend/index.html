@@ -868,9 +868,14 @@
 
     // ==================== 管理后台 ====================
     function showAdminPanel(panelId) {
-      ['admin-list', 'admin-detail', 'admin-report'].forEach(id => {
+      ['admin-list', 'admin-detail', 'admin-report'].forEach(function(id) {
         document.getElementById(id).classList.remove('admin-panel-active');
       });
+      // 重置 admin-report 的内联 display 样式，否则会覆盖 CSS class
+      var reportEl = document.getElementById('admin-report');
+      if (reportEl && panelId !== 'admin-report') {
+        reportEl.style.display = 'none';
+      }
       document.getElementById(panelId).classList.add('admin-panel-active');
     }
 
