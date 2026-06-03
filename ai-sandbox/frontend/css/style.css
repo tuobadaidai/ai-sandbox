@@ -1116,7 +1116,9 @@ body {
   background: var(--bg-tertiary);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-primary);
+  border-left: 3px solid var(--accent);
   overflow: hidden;
+  margin-bottom: 16px;
 }
 
 .company-bg-header {

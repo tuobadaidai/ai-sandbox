@@ -66,12 +66,14 @@
           </div>
           <div class="task-body" id="task-body">
             <!-- 公司背景资料面板 -->
-            <div id="company-bg-panel" class="company-bg-panel" style="display:none;margin-bottom:16px">
+            <div id="company-bg-panel" class="company-bg-panel">
               <div class="company-bg-header" onclick="toggleCompanyBg()">
-                <span>🏢 公司背景资料（点击展开/收起）</span>
-                <span class="company-bg-toggle" id="company-bg-toggle">▼</span>
+                <span>&#127970; 公司背景资料（点击展开/收起）</span>
+                <span class="company-bg-toggle" id="company-bg-toggle">&#9660;</span>
               </div>
-              <div class="company-bg-body" id="company-bg-body"></div>
+              <div class="company-bg-body" id="company-bg-body">
+                <div style="color:var(--text-muted);padding:12px;text-align:center;">加载中...</div>
+              </div>
             </div>
 
             <!-- 候选人角色面板 -->
@@ -452,13 +454,11 @@
         }
         
         bgBody.innerHTML = bgHtml;
-        bgPanel.style.display = 'block';
       } catch (e) {
         console.error('renderCandidateContext error:', e);
-        var panel = document.getElementById('company-bg-panel');
-        if (panel) {
-          panel.style.display = 'block';
-          panel.innerHTML = '<div style="padding:16px;color:red;">公司背景资料加载失败: ' + e.message + '</div>';
+        var bgBody2 = document.getElementById('company-bg-body');
+        if (bgBody2) {
+          bgBody2.innerHTML = '<div style="padding:16px;color:#e74c3c;background:rgba(231,76,60,0.1);border-radius:4px;">&#9888; 公司背景资料加载失败: ' + e.message + '</div>';
         }
       }
     }
