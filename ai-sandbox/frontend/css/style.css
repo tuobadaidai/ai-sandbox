@@ -1105,32 +1105,35 @@ body {
 
 /* === 公司背景资料面板 === */
 .company-bg-panel {
-  background: #1a1a2e;
+  background: #16213e;
   border-radius: 8px;
-  border: 2px solid var(--accent);
+  border: 2px solid #0ea5e9;
   margin-bottom: 16px;
   min-height: 80px;
 }
 
 .company-bg-header {
-  padding: 10px 16px;
+  padding: 12px 18px;
   cursor: pointer;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-accent);
-  background: var(--bg-card);
+  font-size: 14px;
+  font-weight: 700;
+  color: #e0f2fe;
+  background: #0c4a6e;
+  border-radius: 6px 6px 0 0;
   user-select: none;
 }
 
 .company-bg-header:hover {
-  background: var(--bg-hover);
+  background: #0369a1;
 }
 
 .company-bg-toggle {
-  font-size: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #7dd3fc;
   transition: transform 0.2s;
 }
 
@@ -1141,8 +1144,10 @@ body {
 .company-bg-body {
   padding: 16px;
   font-size: 13px;
+  color: #cbd5e1;
   max-height: 400px;
   overflow-y: auto;
+  background: #16213e;
 }
 
 .company-bg-section {
