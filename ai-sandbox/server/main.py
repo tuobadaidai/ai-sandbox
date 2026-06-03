@@ -84,8 +84,9 @@ async def get_sandbox(token: str):
     if candidate["status"] == "pending":
         db.update_candidate_status(candidate["id"], "testing")
 
-    # 加载任务配置
-    task_path = config.TASKS_DIR / config.DEFAULT_TASK
+    # 加载任务配置（使用配置器设置的活跃题本）
+    active_task = cfg.get("task", "active_task", config.DEFAULT_TASK)
+    task_path = config.TASKS_DIR / active_task
     with open(task_path, "r", encoding="utf-8") as f:
         task_config = json.load(f)
 
@@ -539,7 +540,7 @@ async def admin_delete_task(filename: str, _=Depends(verify_admin)):
 async def admin_copy_task(filename: str, request: Request, _=Depends(verify_admin)):
     """复制题本"""
     body = await request.json()
-    new_filename = body.get("filename", filename.replace(".json", "_copy.json"))
+    new_filename = body.get("new_filename", filename.replace(".json", "_copy.json"))
     if not new_filename.endswith(".json"):
         new_filename += ".json"
     src = config.TASKS_DIR / filename
