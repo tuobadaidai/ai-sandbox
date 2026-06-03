@@ -1145,8 +1145,6 @@ body {
   padding: 16px;
   font-size: 13px;
   color: #cbd5e1;
-  max-height: 400px;
-  overflow-y: auto;
   background: #16213e;
 }
 
