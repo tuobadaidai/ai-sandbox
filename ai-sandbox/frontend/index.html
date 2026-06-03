@@ -371,80 +371,96 @@
 
     // 渲染候选人上下文 + 公司背景资料
     function renderCandidateContext(context) {
-      // 角色面板
-      const panel = document.getElementById('candidate-context-panel');
-      if (panel && context) {
-        let html = '<div class="context-title">🎭 您的角色</div>';
-        if (context.role) {
-          html += '<div class="context-role">' + context.role + '</div>';
+      try {
+        // 角色面板
+        var panel = document.getElementById('candidate-context-panel');
+        if (panel && context) {
+          var html = '<div class="context-title">&#127917; 您的角色</div>';
+          if (context.role) {
+            html += '<div class="context-role">' + context.role + '</div>';
+          }
+          if (context.reporting_line) {
+            html += '<div style="font-size:12px;color:var(--text-muted);margin-bottom:2px;">' + context.reporting_line + '</div>';
+          }
+          if (context.tenure) {
+            html += '<div style="font-size:12px;color:var(--text-muted);">' + context.tenure + '</div>';
+          }
+          panel.innerHTML = html;
+          panel.style.display = 'block';
         }
-        if (context.reporting_line) {
-          html += '<div style="font-size:12px;color:var(--text-muted);margin-bottom:2px;">' + context.reporting_line + '</div>';
-        }
-        if (context.tenure) {
-          html += '<div style="font-size:12px;color:var(--text-muted);">' + context.tenure + '</div>';
-        }
-        panel.innerHTML = html;
-        panel.style.display = 'block';
-      }
 
-      // 公司背景资料面板
-      const bgPanel = document.getElementById('company-bg-panel');
-      const bgBody = document.getElementById('company-bg-body');
-      if (!bgPanel || !context || !context.company_profile) return;
-      
-      const cp = context.company_profile;
-      let bgHtml = '';
-      
-      // 关键指标
-      if (cp.key_metrics) {
-        bgHtml += '<div class="company-bg-section"><div class="company-bg-label">📊 关键数据</div>';
-        bgHtml += '<div class="company-bg-metrics">';
-        var metrics = cp.key_metrics;
-        for (var key in metrics) {
-          if (metrics.hasOwnProperty(key)) {
+        // 公司背景资料面板
+        var bgPanel = document.getElementById('company-bg-panel');
+        var bgBody = document.getElementById('company-bg-body');
+        if (!bgPanel || !bgBody) { console.log('company-bg-panel elements not found'); return; }
+        if (!context) { console.log('context is null'); return; }
+        var cp = context.company_profile;
+        if (!cp) { console.log('company_profile is null'); return; }
+
+        var bgHtml = '';
+        
+        // 关键指标
+        if (cp.key_metrics) {
+          bgHtml += '<div class="company-bg-section"><div class="company-bg-label">&#128202; 关键数据</div>';
+          bgHtml += '<div class="company-bg-metrics">';
+          var metrics = cp.key_metrics;
+          var keys = Object.keys(metrics);
+          for (var i = 0; i < keys.length; i++) {
+            var key = keys[i];
             var label = key.replace(/_/g, ' ');
             bgHtml += '<div class="company-bg-metric"><div class="company-bg-metric-label">' + label + '</div><div class="company-bg-metric-value">' + metrics[key] + '</div></div>';
           }
+          bgHtml += '</div></div>';
         }
-        bgHtml += '</div></div>';
+        
+        // 商业模式
+        if (cp.business_model) {
+          bgHtml += '<div class="company-bg-section"><div class="company-bg-label">&#128188; 商业模式</div><div class="company-bg-text">' + cp.business_model + '</div></div>';
+        }
+        
+        // 组织架构
+        if (cp.org_structure) {
+          bgHtml += '<div class="company-bg-section"><div class="company-bg-label">&#127959; 组织架构</div><div class="company-bg-text">' + cp.org_structure + '</div></div>';
+        }
+        
+        // 战略矛盾
+        if (cp.strategic_tensions && cp.strategic_tensions.length > 0) {
+          bgHtml += '<div class="company-bg-section"><div class="company-bg-label">&#9889; 战略矛盾</div><ul class="company-bg-list">';
+          for (var j = 0; j < cp.strategic_tensions.length; j++) {
+            bgHtml += '<li>' + cp.strategic_tensions[j] + '</li>';
+          }
+          bgHtml += '</ul></div>';
+        }
+        
+        // 近期事件
+        if (cp.recent_events && cp.recent_events.length > 0) {
+          bgHtml += '<div class="company-bg-section"><div class="company-bg-label">&#128197; 近期关键事件</div><ul class="company-bg-list">';
+          for (var k = 0; k < cp.recent_events.length; k++) {
+            bgHtml += '<li>' + cp.recent_events[k] + '</li>';
+          }
+          bgHtml += '</ul></div>';
+        }
+        
+        // 关键人物
+        if (context.key_relationships && context.key_relationships.length > 0) {
+          bgHtml += '<div class="company-bg-section"><div class="company-bg-label">&#128101; 关键人物</div>';
+          for (var m = 0; m < context.key_relationships.length; m++) {
+            var p = context.key_relationships[m];
+            bgHtml += '<div style="margin-bottom:8px;"><span style="font-weight:600;color:var(--text-primary);">' + p.person + '</span><br><span style="font-size:12px;color:var(--text-muted);">' + p.stance + '</span></div>';
+          }
+          bgHtml += '</div>';
+        }
+        
+        bgBody.innerHTML = bgHtml;
+        bgPanel.style.display = 'block';
+      } catch (e) {
+        console.error('renderCandidateContext error:', e);
+        var panel = document.getElementById('company-bg-panel');
+        if (panel) {
+          panel.style.display = 'block';
+          panel.innerHTML = '<div style="padding:16px;color:red;">公司背景资料加载失败: ' + e.message + '</div>';
+        }
       }
-      
-      // 商业模式
-      if (cp.business_model) {
-        bgHtml += '<div class="company-bg-section"><div class="company-bg-label">💼 商业模式</div><div class="company-bg-text">' + cp.business_model + '</div></div>';
-      }
-      
-      // 组织架构
-      if (cp.org_structure) {
-        bgHtml += '<div class="company-bg-section"><div class="company-bg-label">🏗️ 组织架构</div><div class="company-bg-text">' + cp.org_structure + '</div></div>';
-      }
-      
-      // 战略矛盾
-      if (cp.strategic_tensions && cp.strategic_tensions.length > 0) {
-        bgHtml += '<div class="company-bg-section"><div class="company-bg-label">⚡ 战略矛盾</div><ul class="company-bg-list">';
-        cp.strategic_tensions.forEach(function(t) { bgHtml += '<li>' + t + '</li>'; });
-        bgHtml += '</ul></div>';
-      }
-      
-      // 近期事件
-      if (cp.recent_events && cp.recent_events.length > 0) {
-        bgHtml += '<div class="company-bg-section"><div class="company-bg-label">📅 近期关键事件</div><ul class="company-bg-list">';
-        cp.recent_events.forEach(function(e) { bgHtml += '<li>' + e + '</li>'; });
-        bgHtml += '</ul></div>';
-      }
-      
-      // 关键人物
-      if (context.key_relationships && context.key_relationships.length > 0) {
-        bgHtml += '<div class="company-bg-section"><div class="company-bg-label">👥 关键人物</div>';
-        context.key_relationships.forEach(function(p) {
-          bgHtml += '<div style="margin-bottom:8px;"><span style="font-weight:600;color:var(--text-primary);">' + p.person + '</span><br><span style="font-size:12px;color:var(--text-muted);">' + p.stance + '</span></div>';
-        });
-        bgHtml += '</div>';
-      }
-      
-      bgBody.innerHTML = bgHtml;
-      bgPanel.style.display = 'block';
     }
 
     function toggleCompanyBg() {
