@@ -120,6 +120,33 @@ def init_db():
                 created_at TEXT DEFAULT (datetime('now'))
             );
         """)
+
+        # 配置变更审计日志
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS config_changelog (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category TEXT NOT NULL,
+                key TEXT NOT NULL,
+                old_value TEXT,
+                new_value TEXT,
+                operator TEXT DEFAULT 'admin',
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+
+        # 题本管理表
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                content TEXT NOT NULL,
+                is_active INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
         # Migration: add new columns if upgrading from older schema
         try:
             conn.execute("ALTER TABLE evaluations ADD COLUMN work_dna_portrait TEXT DEFAULT ''")

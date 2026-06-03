@@ -62,10 +62,10 @@ class BaseAIProvider(ABC):
 class DashScopeProvider(BaseAIProvider):
     """阿里云 DashScope（通义千问）AI 后端"""
 
-    def __init__(self):
-        self.api_key = DASHSCOPE_API_KEY
-        self.model = DASHSCOPE_MODEL
-        self.base_url = DASHSCOPE_BASE_URL
+    def __init__(self, api_key: str = None, model: str = None, base_url: str = None):
+        self.api_key = api_key or DASHSCOPE_API_KEY
+        self.model = model or DASHSCOPE_MODEL
+        self.base_url = base_url or DASHSCOPE_BASE_URL
 
     @property
     def name(self) -> str:
@@ -167,10 +167,10 @@ class DashScopeProvider(BaseAIProvider):
 class OllamaProvider(BaseAIProvider):
     """Ollama 本地 AI 后端（OpenAI 兼容协议）"""
 
-    def __init__(self):
-        self.api_key = AI_API_KEY
-        self.model = AI_MODEL
-        self.base_url = AI_BASE_URL
+    def __init__(self, api_key: str = None, model: str = None, base_url: str = None):
+        self.api_key = api_key or AI_API_KEY
+        self.model = model or AI_MODEL
+        self.base_url = base_url or AI_BASE_URL
 
     @property
     def name(self) -> str:
@@ -325,18 +325,68 @@ class MockProvider(BaseAIProvider):
 # Provider 工厂
 # ============================================================================
 
+# 运行时配置覆盖（由 ConfigService 热更新写入）
+_runtime_overrides = {
+    "provider": None,       # "dashscope" / "ollama" / "mock"
+    "dashscope": {},        # 覆盖 dashscope 配置
+    "ollama": {},           # 覆盖 ollama 配置
+    "params": {},           # 覆盖 AI 参数
+    "hallucination_rate": None,
+}
+
+
+def update_runtime_config(key: str, value: Any):
+    """热更新 AI Provider 运行时配置（由 ConfigService 调用）"""
+    global _runtime_overrides
+    if key in ("provider", "hallucination_rate"):
+        _runtime_overrides[key] = value
+    elif key in ("dashscope", "ollama", "params"):
+        _runtime_overrides[key] = value
+
+
+def get_active_provider_config() -> dict:
+    """获取当前生效的 provider 配置（合并运行时覆盖 + 环境变量）"""
+    provider = _runtime_overrides.get("provider")
+    if provider == "mock":
+        return {"provider": "mock"}
+    elif provider == "dashscope" or (provider is None and DASHSCOPE_API_KEY):
+        ds = {"api_key": DASHSCOPE_API_KEY, "model": DASHSCOPE_MODEL, "base_url": DASHSCOPE_BASE_URL}
+        ds.update(_runtime_overrides.get("dashscope", {}))
+        return {"provider": "dashscope", **ds}
+    else:
+        ol = {"api_key": AI_API_KEY, "model": AI_MODEL, "base_url": AI_BASE_URL}
+        ol.update(_runtime_overrides.get("ollama", {}))
+        return {"provider": "ollama", **ol}
+
+
 def create_provider() -> BaseAIProvider:
     """根据配置创建合适的 AI Provider
 
-    优先级：DashScope > Ollama > Mock
+    优先级：运行时覆盖 > DashScope > Ollama > Mock
 
     返回:
         BaseAIProvider 实例
     """
+    provider = _runtime_overrides.get("provider")
+
+    if provider == "mock":
+        return MockProvider()
+    elif provider == "dashscope":
+        cfg = get_active_provider_config()
+        return DashScopeProvider(
+            api_key=cfg.get("api_key", DASHSCOPE_API_KEY),
+            model=cfg.get("model", DASHSCOPE_MODEL),
+            base_url=cfg.get("base_url", DASHSCOPE_BASE_URL),
+        )
+    elif provider == "ollama":
+        cfg = get_active_provider_config()
+        return OllamaProvider(
+            model=cfg.get("model", AI_MODEL),
+            base_url=cfg.get("base_url", AI_BASE_URL),
+        )
+
+    # 自动检测（无运行时覆盖时走原逻辑）
     if DASHSCOPE_API_KEY:
         return DashScopeProvider()
-    elif AI_API_KEY and AI_API_KEY != "ollama":
-        return OllamaProvider()
     else:
-        # 检查 Ollama 是否在运行
         return OllamaProvider() if AI_BASE_URL else MockProvider()

@@ -143,9 +143,23 @@
       <div class="admin-body">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
           <h2>候选人列表</h2>
-          <button class="btn btn-ghost btn-sm" onclick="refreshCandidateList()">刷新</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="showAdminPanel('admin-config');window.configPanel.render(document.getElementById('config-container'))">⚙️ 系统配置</button>
+            <button class="btn btn-ghost btn-sm" onclick="refreshCandidateList()">刷新</button>
+          </div>
         </div>
         <div id="candidate-list-container"></div>
+      </div>
+    </div>
+
+    <!-- 系统配置 -->
+    <div id="admin-config" style="display:none">
+      <div class="admin-body">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
+          <h2>系统配置</h2>
+          <button class="btn btn-ghost btn-sm" onclick="showAdminList()">← 返回列表</button>
+        </div>
+        <div id="config-container"></div>
       </div>
     </div>
 
@@ -191,6 +205,7 @@
   <script src="js/sandbox.js"></script>
   <script src="js/ai-chat.js"></script>
   <script src="js/admin.js"></script>
+  <script src="js/config.js"></script>
   <script>
     // ==================== 全局状态 ====================
     let API_BASE = window.location.origin;
@@ -884,15 +899,18 @@
 
     // ==================== 管理后台 ====================
     function showAdminPanel(panelId) {
-      ['admin-list', 'admin-detail', 'admin-report'].forEach(function(id) {
-        document.getElementById(id).classList.remove('admin-panel-active');
+      ['admin-list', 'admin-detail', 'admin-report', 'admin-config'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) {
+          el.classList.remove('admin-panel-active');
+          el.style.display = 'none';
+        }
       });
-      // 重置 admin-report 的内联 display 样式，否则会覆盖 CSS class
-      var reportEl = document.getElementById('admin-report');
-      if (reportEl && panelId !== 'admin-report') {
-        reportEl.style.display = 'none';
+      var panel = document.getElementById(panelId);
+      if (panel) {
+        panel.style.display = 'block';
+        panel.classList.add('admin-panel-active');
       }
-      document.getElementById(panelId).classList.add('admin-panel-active');
     }
 
     async function adminLogin() {

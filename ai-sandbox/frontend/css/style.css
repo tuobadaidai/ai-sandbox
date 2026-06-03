@@ -1217,3 +1217,205 @@ body {
   font-weight: 600;
   color: var(--text-primary);
 }
+
+/* ==================== 系统配置面板 ==================== */
+
+.config-panel {
+  max-width: 800px;
+}
+
+.config-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+
+.config-tab {
+  padding: 8px 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.config-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.config-tab.active {
+  color: var(--accent);
+  font-weight: 600;
+  border-bottom: 2px solid var(--accent);
+}
+
+.config-section h3 {
+  font-size: 18px;
+  margin-bottom: 20px;
+  color: var(--text-primary);
+}
+
+.config-subsection {
+  margin: 20px 0;
+  padding: 16px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.config-subsection h4 {
+  font-size: 14px;
+  margin-bottom: 12px;
+  color: var(--text-secondary);
+}
+
+.config-field {
+  margin-bottom: 12px;
+}
+
+.config-field > label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.config-input {
+  width: 100%;
+  max-width: 400px;
+}
+
+.radio-group {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.config-slider {
+  width: 100%;
+  max-width: 300px;
+  accent-color: var(--accent);
+}
+
+.config-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+/* 题本卡片 */
+.task-card {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: var(--bg-card);
+  transition: border-color 0.2s;
+}
+
+.task-card:hover {
+  border-color: var(--accent);
+}
+
+.task-card.task-active {
+  border-color: var(--success);
+  background: rgba(16, 185, 129, 0.05);
+}
+
+/* 关键词标签 */
+.keyword-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 32px;
+}
+
+.kw-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--accent-dim, rgba(14, 165, 233, 0.1));
+  color: var(--accent);
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.kw-remove {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-weight: bold;
+  margin-left: 2px;
+}
+
+.kw-remove:hover {
+  color: var(--danger, #e74c3c);
+}
+
+/* 变更历史 */
+.changelog-list {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.changelog-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.changelog-item:last-child {
+  border-bottom: none;
+}
+
+.changelog-meta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.changelog-category {
+  padding: 2px 8px;
+  background: var(--accent-dim, rgba(14, 165, 233, 0.1));
+  color: var(--accent);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.changelog-key {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.changelog-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.changelog-diff {
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.changelog-diff span {
+  display: block;
+  padding: 2px 0;
+}

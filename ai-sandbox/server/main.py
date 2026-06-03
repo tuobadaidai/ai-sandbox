@@ -19,6 +19,7 @@ from models import (
 )
 import database as db
 from services import ai_service, behavior_analyzer, evaluation_engine
+from services.config_service import ConfigService
 
 app = FastAPI(title="AI 沙盒行为洞察系统", version="1.0.0")
 
@@ -370,6 +371,214 @@ async def admin_get_evaluation_by_version(candidate_id: str, version: int, _=Dep
     if not evaluation:
         raise HTTPException(404, f"版本 {version} 不存在")
     return {"candidate_id": candidate_id, "evaluation": evaluation}
+
+
+# === 系统配置 API ===
+
+cfg = ConfigService()
+
+
+@app.get("/api/admin/config/ai")
+async def admin_get_ai_config(_=Depends(verify_admin)):
+    """获取当前 AI 配置（API Key 脱敏）"""
+    return cfg.get("ai")
+
+
+@app.put("/api/admin/config/ai")
+async def admin_update_ai_config(request: Request, _=Depends(verify_admin)):
+    """更新 AI 配置"""
+    body = await request.json()
+    # 验证 provider 合法性
+    if "provider" in body and body["provider"] not in ("dashscope", "ollama", "mock", None):
+        raise HTTPException(400, "provider 必须是 dashscope/ollama/mock")
+    cfg.set_batch("ai", body)
+    return {"status": "ok", "message": "AI 配置已更新"}
+
+
+@app.post("/api/admin/config/ai/test")
+async def admin_test_ai_connection(_=Depends(verify_admin)):
+    """测试当前 AI 连接"""
+    import asyncio
+    try:
+        from services.ai_provider import create_provider
+        provider = create_provider()
+        start = time.time()
+        result = await provider.chat("你好，请简短回复", 1, "你是一个测试助手，请简短回复。")
+        elapsed = round((time.time() - start) * 1000)
+        return {
+            "success": True,
+            "provider": provider.name,
+            "response_time_ms": elapsed,
+            "test_response": result[:200]
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "provider": str(e),
+            "response_time_ms": 0,
+            "test_response": None,
+            "error": str(e)
+        }
+
+
+@app.get("/api/admin/config/tasks")
+async def admin_list_tasks(_=Depends(verify_admin)):
+    """获取题本列表"""
+    tasks_dir = config.TASKS_DIR
+    task_files = sorted(tasks_dir.glob("*.json")) if tasks_dir.exists() else []
+    active_task = cfg.get("task", "active_task", config.DEFAULT_TASK)
+    tasks = []
+    for f in task_files:
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            tasks.append({
+                "filename": f.name,
+                "name": data.get("name", f.name),
+                "description": data.get("description", ""),
+                "duration_minutes": data.get("duration_minutes", 0),
+                "stages_count": len(data.get("stages", [])),
+                "is_active": f.name == active_task
+            })
+        except Exception:
+            tasks.append({"filename": f.name, "name": f.name, "error": "parse_error"})
+    return {"tasks": tasks, "active_task": active_task}
+
+
+@app.get("/api/admin/config/tasks/active")
+async def admin_get_active_task(_=Depends(verify_admin)):
+    """获取当前活跃题本详情"""
+    active_task = cfg.get("task", "active_task", config.DEFAULT_TASK)
+    task_path = config.TASKS_DIR / active_task
+    if not task_path.exists():
+        raise HTTPException(404, f"题本文件 {active_task} 不存在")
+    return json.loads(task_path.read_text(encoding="utf-8"))
+
+
+@app.put("/api/admin/config/tasks/active")
+async def admin_set_active_task(request: Request, _=Depends(verify_admin)):
+    """切换活跃题本"""
+    body = await request.json()
+    filename = body.get("filename")
+    if not filename:
+        raise HTTPException(400, "缺少 filename")
+    task_path = config.TASKS_DIR / filename
+    if not task_path.exists():
+        raise HTTPException(404, f"题本文件 {filename} 不存在")
+    # 验证 JSON 合法性
+    try:
+        json.loads(task_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        raise HTTPException(400, f"题本文件 {filename} JSON 格式错误")
+    cfg.set("task", "active_task", filename)
+    return {"status": "ok", "active_task": filename}
+
+
+@app.post("/api/admin/config/tasks")
+async def admin_create_task(request: Request, _=Depends(verify_admin)):
+    """创建新题本"""
+    body = await request.json()
+    filename = body.get("filename")
+    content = body.get("content")
+    if not filename or not content:
+        raise HTTPException(400, "缺少 filename 或 content")
+    if not filename.endswith(".json"):
+        filename += ".json"
+    task_path = config.TASKS_DIR / filename
+    if task_path.exists():
+        raise HTTPException(409, f"题本 {filename} 已存在")
+    # 验证 JSON
+    try:
+        json.loads(content) if isinstance(content, str) else content
+    except json.JSONDecodeError:
+        raise HTTPException(400, "content 不是合法的 JSON")
+    task_path.write_text(content if isinstance(content, str) else json.dumps(content, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"status": "ok", "filename": filename}
+
+
+@app.put("/api/admin/config/tasks/{filename}")
+async def admin_update_task(filename: str, request: Request, _=Depends(verify_admin)):
+    """编辑题本"""
+    body = await request.json()
+    content = body.get("content")
+    if not content:
+        raise HTTPException(400, "缺少 content")
+    task_path = config.TASKS_DIR / filename
+    if not task_path.exists():
+        raise HTTPException(404, f"题本 {filename} 不存在")
+    try:
+        json.loads(content) if isinstance(content, str) else content
+    except json.JSONDecodeError:
+        raise HTTPException(400, "content 不是合法的 JSON")
+    task_path.write_text(content if isinstance(content, str) else json.dumps(content, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"status": "ok"}
+
+
+@app.delete("/api/admin/config/tasks/{filename}")
+async def admin_delete_task(filename: str, _=Depends(verify_admin)):
+    """删除题本（不能删除当前活跃题本）"""
+    active_task = cfg.get("task", "active_task", config.DEFAULT_TASK)
+    if filename == active_task:
+        raise HTTPException(400, "不能删除当前活跃题本，请先切换")
+    task_path = config.TASKS_DIR / filename
+    if not task_path.exists():
+        raise HTTPException(404, f"题本 {filename} 不存在")
+    task_path.unlink()
+    return {"status": "ok"}
+
+
+@app.post("/api/admin/config/tasks/{filename}/copy")
+async def admin_copy_task(filename: str, request: Request, _=Depends(verify_admin)):
+    """复制题本"""
+    body = await request.json()
+    new_filename = body.get("filename", filename.replace(".json", "_copy.json"))
+    if not new_filename.endswith(".json"):
+        new_filename += ".json"
+    src = config.TASKS_DIR / filename
+    dst = config.TASKS_DIR / new_filename
+    if not src.exists():
+        raise HTTPException(404, f"题本 {filename} 不存在")
+    if dst.exists():
+        raise HTTPException(409, f"题本 {new_filename} 已存在")
+    dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    return {"status": "ok", "filename": new_filename}
+
+
+@app.get("/api/admin/config/evaluation")
+async def admin_get_evaluation_config(_=Depends(verify_admin)):
+    """获取评估维度配置"""
+    return cfg.get("evaluation")
+
+
+@app.put("/api/admin/config/evaluation")
+async def admin_update_evaluation_config(request: Request, _=Depends(verify_admin)):
+    """更新评估维度配置"""
+    body = await request.json()
+    # 校验权重总和
+    if "dimension_weights" in body:
+        weights = body["dimension_weights"]
+        total = sum(weights.values())
+        if abs(total - 1.0) > 0.01:
+            raise HTTPException(400, f"权重总和必须为 1.0，当前为 {total:.2f}")
+    # 校验阈值单调递增
+    if "level_thresholds" in body:
+        t = body["level_thresholds"]
+        if not (t.get("L1", 0) < t.get("L2", 999) < t.get("L3", 9999)):
+            raise HTTPException(400, "阈值必须满足 L1 < L2 < L3")
+    cfg.set_batch("evaluation", body)
+    return {"status": "ok", "message": "评估配置已更新"}
+
+
+@app.post("/api/admin/config/evaluation/reset")
+async def admin_reset_evaluation_config(_=Depends(verify_admin)):
+    """重置评估配置为默认值"""
+    cfg.reset_category("evaluation")
+    return {"status": "ok", "message": "评估配置已重置为默认值"}
+
+
+@app.get("/api/admin/config/changelog")
+async def admin_get_config_changelog(category: str = None, limit: int = 50, _=Depends(verify_admin)):
+    """获取配置变更历史"""
+    return {"changelog": cfg.get_changelog(category, limit)}
 
 
 # === 启动 ===

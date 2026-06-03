@@ -662,21 +662,8 @@ DIMENSION_WEIGHTS = {
 }
 
 
-def determine_level(average_score: float) -> str:
-    """根据加权平均得分判定能力等级。
-
-    基于实际分布设计的阈值：
-    - L1 (入门)：候选人几乎被动接受 AI 输出，不做判断
-    - L2 (进阶)：候选人能主动使用 AI，但缺乏系统性
-    - L3 (熟练)：候选人具备结构化思维和判断力
-    - L4 (专家)：候选人能深度协作，主动质疑和迭代
-
-    参数:
-        average_score: 加权能力得分（1.0 ~ 4.0 范围）
-
-    返回:
-        等级字符串: "L1" / "L2" / "L3" / "L4"
-    """
+def _determine_level_original(average_score: float) -> str:
+    """原始硬编码阈值版本（保留作为 fallback）"""
     if average_score < 1.8:
         return "L1"
     elif average_score < 2.5:
@@ -1120,3 +1107,71 @@ def _ref_ts(stage_events: list[dict]) -> Optional[str]:
         if ts:
             return ts
     return None
+
+
+# ============================================================================
+# 热更新钩子（由 ConfigService 调用）
+# ============================================================================
+
+# 运行时阈值配置（初始化为代码默认值，可被 ConfigService 热更新）
+_RUNTIME_THRESHOLDS = {
+    "L1": 1.8,
+    "L2": 2.5,
+    "L3": 3.2,
+}
+
+_RUNTIME_SCORE_RANGE = {
+    "min": 1.0,
+    "max": 4.0,
+}
+
+
+def update_evaluation_config(key: str, value: Any):
+    """热更新评估配置（由 ConfigService 调用）
+
+    支持更新的配置项：
+    - dimension_weights: 维度权重字典
+    - level_thresholds: 级别阈值字典
+    - score_range: 评分范围字典
+    - keywords: 关键词字典
+    """
+    global DIMENSION_WEIGHTS, DECOMPOSITION_KEYWORDS, CLARIFICATION_KEYWORDS
+    global VERIFICATION_KEYWORDS, _RUNTIME_THRESHOLDS, _RUNTIME_SCORE_RANGE
+
+    if key == "dimension_weights":
+        DIMENSION_WEIGHTS = value
+    elif key == "level_thresholds":
+        _RUNTIME_THRESHOLDS = value
+    elif key == "score_range":
+        _RUNTIME_SCORE_RANGE = value
+    elif key == "keywords":
+        if isinstance(value, dict):
+            if "decomposition" in value:
+                DECOMPOSITION_KEYWORDS = value["decomposition"]
+            if "clarification" in value:
+                CLARIFICATION_KEYWORDS = value["clarification"]
+            if "verification" in value:
+                VERIFICATION_KEYWORDS = value["verification"]
+
+# 修改 determine_level 和 _clamp_score 使用运行时配置（已在文件末尾重新定义）
+
+
+def determine_level(average_score: float) -> str:
+    """根据加权平均得分判定能力等级（使用运行时可配置阈值）"""
+    t = _RUNTIME_THRESHOLDS
+    if average_score < t.get("L1", 1.8):
+        return "L1"
+    elif average_score < t.get("L2", 2.5):
+        return "L2"
+    elif average_score < t.get("L3", 3.2):
+        return "L3"
+    else:
+        return "L4"
+
+
+def _clamp_score(score: float, min_val: float = None, max_val: float = None) -> float:
+    """限制得分在可配置范围内，保留一位小数"""
+    r = _RUNTIME_SCORE_RANGE
+    min_val = min_val if min_val is not None else r.get("min", 1.0)
+    max_val = max_val if max_val is not None else r.get("max", 4.0)
+    return round(max(min_val, min(score, max_val)), 1)

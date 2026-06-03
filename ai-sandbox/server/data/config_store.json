@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "ai": {
+    "provider": null,
+    "dashscope": {
+      "api_key": "",
+      "model": "qwen-plus",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    },
+    "ollama": {
+      "api_key": "ollama",
+      "model": "qwen2:1.5b",
+      "base_url": "http://localhost:11434/v1"
+    },
+    "params": {
+      "max_tokens": 2048,
+      "temperature": 0.7,
+      "timeout": 60
+    },
+    "hallucination_rate": 0.15
+  },
+  "task": {
+    "active_task": "task_v3_valid.json"
+  },
+  "evaluation": {
+    "dimension_weights": {
+      "ai_fluency": 0.15,
+      "human_ai_judgment": 0.25,
+      "architecture_design": 0.2,
+      "hybrid_orchestration": 0.15,
+      "cognitive_depth": 0.15,
+      "problem_modeling": 0.1
+    },
+    "level_thresholds": {
+      "L1": 1.8,
+      "L2": 2.5,
+      "L3": 3.2
+    },
+    "score_range": {
+      "min": 1.0,
+      "max": 4.0
+    },
+    "keywords": {
+      "decomposition": [
+        "首先",
+        "第一步",
+        "框架",
+        "拆解",
+        "分",
+        "步骤",
+        "方案",
+        "结构"
+      ],
+      "clarification": [
+        "?",
+        "？",
+        "什么",
+        "哪些",
+        "如何",
+        "怎么",
+        "是否",
+        "请确认",
+        "确认一下"
+      ],
+      "verification": [
+        "验证",
+        "检查",
+        "确认",
+        "数据",
+        "来源",
+        "准确",
+        "真实",
+        "核实",
+        "查证"
+      ]
+    }
+  },
+  "updated_at": "2026-06-04T00:07:34.302308"
+}
