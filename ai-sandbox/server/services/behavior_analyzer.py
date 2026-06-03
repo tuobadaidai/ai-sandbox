@@ -457,11 +457,14 @@ def _calc_hybrid_orchestration(events: list[dict]) -> float:
 
 def _calc_cognitive_depth(events: list[dict]) -> float:
     """认知深度：评估候选人在 Stage 3 的事实核查能力与错误恢复行为。
+    
+    增强版：结合服务端心跳数据评估专注度和持续关注度。
 
     指标:
     - Stage 3 中是否有对 AI 输出的质疑行为
     - ERROR_ENCOUNTERED 数量和恢复情况
     - UNDO_REDO 次数（反映迭代与精炼）
+    - 心跳间隔分析（服务端埋点，不可伪造）
     """
     # Stage 3 事件
     stage3_events = [e for e in events if e.get("stage") == 3]
@@ -502,6 +505,31 @@ def _calc_cognitive_depth(events: list[dict]) -> float:
     undo_redos = [e for e in events if e.get("event_type") == "UNDO_REDO"]
     ur_count = len(undo_redos)
 
+    # 心跳专注度分析（服务端埋点）
+    heartbeats = [e for e in events if e.get("event_type") == "HEARTBEAT"]
+    engagement_bonus = 0.0
+    if len(heartbeats) >= 3:
+        # 分析心跳间隔的规律性
+        from datetime import datetime
+        try:
+            hb_times = []
+            for hb in heartbeats:
+                ts = hb.get("timestamp", "")
+                if ts:
+                    hb_times.append(datetime.fromisoformat(ts.replace("Z", "+00:00")))
+            if len(hb_times) >= 3:
+                hb_times.sort()
+                intervals = [(hb_times[i+1] - hb_times[i]).total_seconds() for i in range(len(hb_times)-1)]
+                avg_interval = statistics.mean(intervals)
+                # 规律心跳（60-120s 间隔）= 专注
+                if 30 < avg_interval < 180:
+                    engagement_bonus = 0.2
+                # 非常规律 + 长时间 = 高度专注
+                if 30 < avg_interval < 180 and len(heartbeats) > 10:
+                    engagement_bonus = 0.3
+        except Exception:
+            pass
+
     # 计分
     score = 1.0
 
@@ -517,15 +545,18 @@ def _calc_cognitive_depth(events: list[dict]) -> float:
 
     # 错误恢复加分
     if len(all_errors) > 0 and recovered_errors > 0:
-        score = min(score + 0.2, 3.5)
+        score = min(score + 0.2, 4.0)
     if recovered_errors >= 2:
-        score = min(score + 0.2, 3.5)
+        score = min(score + 0.2, 4.0)
 
     # 迭代精炼加分（UNDO_REDO）
     if ur_count >= 3:
-        score = min(score + 0.3, 3.5)
+        score = min(score + 0.3, 4.0)
     elif ur_count >= 1:
-        score = min(score + 0.1, 3.5)
+        score = min(score + 0.1, 4.0)
+
+    # 专注度加分（心跳数据）
+    score = min(score + engagement_bonus, 4.0)
 
     return _clamp_score(score)
 

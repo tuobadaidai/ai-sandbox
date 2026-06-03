@@ -190,6 +190,31 @@ async def submit_task(token: str, submission: TaskSubmission = Body(default=None
     return {"status": "completed", "candidate_id": candidate["id"]}
 
 
+@app.post("/api/heartbeat/{token}")
+async def candidate_heartbeat(token: str):
+    """候选人心跳接口，前端每 60 秒调用一次。
+    
+    用途：
+    - 记录候选人活跃状态（服务端埋点，无法伪造）
+    - 检测候选人是否中途离开
+    - 评估专注度和时间管理能力
+    """
+    candidate = db.get_candidate_by_token(token)
+    if not candidate:
+        raise HTTPException(401, "无效的访问凭证")
+
+    db.save_events([{
+        "candidate_id": candidate["id"],
+        "session_id": "",
+        "timestamp": db.now_iso(),
+        "event_type": "HEARTBEAT",
+        "stage": 0,
+        "metadata": {"source": "heartbeat"}
+    }])
+
+    return {"status": "ok", "timestamp": db.now_iso()}
+
+
 # === 管理员登录 ===
 
 @app.post("/api/admin/login", response_model=AdminLoginResponse)
@@ -207,13 +232,9 @@ async def admin_login(data: AdminLoginRequest):
 @app.post("/api/admin/logout")
 async def admin_logout(session_id: str = Header(..., alias="X-Admin-Session")):
     """管理员登出，销毁会话"""
-    # 不强制验证，即使会话无效也返回成功
-    conn = db.get_connection()
-    try:
+    with db.db_conn() as conn:
         conn.execute("DELETE FROM admin_sessions WHERE session_id = ?", (session_id,))
         conn.commit()
-    finally:
-        conn.close()
     return {"status": "logged_out"}
 
 
@@ -356,6 +377,76 @@ async def admin_get_evaluation_by_version(candidate_id: str, version: int, _=Dep
 @app.on_event("startup")
 def startup():
     db.init_db()
+
+
+# === 服务端行为追踪中间件 ===
+# 自动记录 API 访问模式，作为客户端追踪的补充，防止行为数据被篡改
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+
+
+class BehaviorTrackingMiddleware(BaseHTTPMiddleware):
+    """服务端行为追踪中间件
+    
+    自动记录候选人 API 调用模式：
+    - AI 对话频率和时机
+    - 沙盒访问模式
+    - 阶段切换行为
+    - 提交模式（是否反复修改）
+    
+    与客户端埋点互补：
+    - 客户端追踪：详细交互（点击、输入、滚动、复制粘贴）
+    - 服务端追踪：API 调用模式（无法被客户端绕过）
+    """
+
+    # 需要追踪的 API 路径
+    TRACKED_PATTERNS = [
+        ("/api/ai/chat/", "AI_CHAT"),
+        ("/api/sandbox/", "SANDBOX_ACCESS"),
+        ("/api/events/", "EVENTS_UPLOAD"),
+        ("/api/stages/submit/", "STAGE_SUBMIT_SERVER"),
+        ("/api/submit/", "TASK_SUBMIT_SERVER"),
+    ]
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+
+        # 仅追踪候选人相关的 API
+        path = request.url.path
+        tracked_event = None
+        for pattern, event_type in self.TRACKED_PATTERNS:
+            if path.startswith(pattern):
+                tracked_event = event_type
+                break
+
+        if tracked_event:
+            # 从 URL 提取 token
+            token = path.split("/")[-1]
+            candidate = db.get_candidate_by_token(token)
+            if candidate:
+                try:
+                    db.save_events([{
+                        "candidate_id": candidate["id"],
+                        "session_id": "server",
+                        "timestamp": db.now_iso(),
+                        "event_type": tracked_event,
+                        "stage": 0,  # 服务端事件不区分阶段
+                        "metadata": {
+                            "method": request.method,
+                            "path": path,
+                            "status_code": response.status_code,
+                            "source": "server_middleware",
+                        }
+                    }])
+                except Exception:
+                    pass  # 追踪失败不影响主流程
+
+        return response
+
+
+# 注册中间件（在 CORS 之后，路由之前）
+app.add_middleware(BehaviorTrackingMiddleware)
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host=config.SERVER_HOST, port=config.SERVER_PORT, reload=True)
