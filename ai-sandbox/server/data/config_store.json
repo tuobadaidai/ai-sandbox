@@ -13,11 +13,11 @@
       "base_url": "http://localhost:11434/v1"
     },
     "params": {
+      "temperature": 0.5,
       "max_tokens": 2048,
-      "temperature": 0.7,
       "timeout": 60
     },
-    "hallucination_rate": 0.15
+    "hallucination_rate": 0.1
   },
   "task": {
     "active_task": "task_v3_valid.json"
@@ -75,5 +75,5 @@
       ]
     }
   },
-  "updated_at": "2026-06-04T00:07:34.302308"
+  "updated_at": "2026-06-04T00:12:14.734683"
 }

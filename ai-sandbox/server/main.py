@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Depends, Query, Header, Body
+from fastapi import FastAPI, HTTPException, Depends, Query, Header, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -440,7 +440,7 @@ async def admin_list_tasks(_=Depends(verify_admin)):
                 "is_active": f.name == active_task
             })
         except Exception:
-            tasks.append({"filename": f.name, "name": f.name, "error": "parse_error"})
+            tasks.append({"filename": f.name, "name": f.name, "error": "parse_error", "is_active": f.name == active_task})
     return {"tasks": tasks, "active_task": active_task}
 
 
