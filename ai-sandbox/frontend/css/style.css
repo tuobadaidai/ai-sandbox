@@ -1105,12 +1105,11 @@ body {
 
 /* === 公司背景资料面板 === */
 .company-bg-panel {
-  background: var(--bg-tertiary);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-primary);
-  border-left: 3px solid var(--accent);
-  overflow: hidden;
+  background: #1a1a2e;
+  border-radius: 8px;
+  border: 2px solid var(--accent);
   margin-bottom: 16px;
+  min-height: 80px;
 }
 
 .company-bg-header {
