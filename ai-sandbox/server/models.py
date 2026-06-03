@@ -163,6 +163,19 @@ class CognitiveProfile(BaseModel):
     authenticity_risk: str = ""
 
 
+# === 管理员认证 ===
+
+class AdminLoginRequest(BaseModel):
+    """管理员登录请求"""
+    secret: str = Field(min_length=1, max_length=200)
+
+
+class AdminLoginResponse(BaseModel):
+    """管理员登录响应"""
+    session_id: str
+    expires_in: int  # 秒
+
+
 class EvaluationResult(BaseModel):
     candidate_id: str
     candidate_name: str

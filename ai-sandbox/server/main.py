@@ -14,18 +14,22 @@ import config
 from models import (
     CandidateCreate, BehaviorEventBatch, AIChatRequest,
     AIChatResponse, EvaluationResult, TaskSubmission,
-    StageSubmission, StageSubmissionResponse
+    StageSubmission, StageSubmissionResponse,
+    AdminLoginRequest, AdminLoginResponse
 )
 import database as db
 from services import ai_service, behavior_analyzer, evaluation_engine
 
 app = FastAPI(title="AI 沙盒行为洞察系统", version="1.0.0")
 
+# CORS：根据环境变量动态配置，默认仅允许同源
+_cors_origins = config.CORS_ORIGINS.split(",") if config.CORS_ORIGINS else []
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_cors_origins if _cors_origins else [],  # 无配置则不允许跨域
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "Authorization", "X-Token", "X-Admin-Session"],
+    allow_credentials=True if _cors_origins else False,
 )
 
 # 前端静态文件
@@ -43,9 +47,10 @@ async def get_candidate_by_token(token: str = Header(..., alias="X-Token")) -> d
     return candidate
 
 
-async def verify_admin(secret: str = Query(...)) -> bool:
-    if not db.verify_admin(secret):
-        raise HTTPException(401, "管理密码错误")
+async def verify_admin(session_id: str = Header(..., alias="X-Admin-Session")) -> bool:
+    """管理员认证：通过 Header 传递 session_id，不再走 Query 参数"""
+    if not db.verify_admin_session(session_id):
+        raise HTTPException(401, "管理员会话无效或已过期，请重新登录")
     return True
 
 
@@ -185,6 +190,33 @@ async def submit_task(token: str, submission: TaskSubmission = Body(default=None
     return {"status": "completed", "candidate_id": candidate["id"]}
 
 
+# === 管理员登录 ===
+
+@app.post("/api/admin/login", response_model=AdminLoginResponse)
+async def admin_login(data: AdminLoginRequest):
+    """管理员登录，返回会话 token。密码不再通过 URL 传递。"""
+    if not db.verify_admin(data.secret):
+        raise HTTPException(401, "管理密码错误")
+    session_id = db.create_admin_session()
+    return AdminLoginResponse(
+        session_id=session_id,
+        expires_in=config.ADMIN_SESSION_EXPIRY
+    )
+
+
+@app.post("/api/admin/logout")
+async def admin_logout(session_id: str = Header(..., alias="X-Admin-Session")):
+    """管理员登出，销毁会话"""
+    # 不强制验证，即使会话无效也返回成功
+    conn = db.get_connection()
+    try:
+        conn.execute("DELETE FROM admin_sessions WHERE session_id = ?", (session_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "logged_out"}
+
+
 # === 管理后台 ===
 
 @app.get("/api/admin/candidates")
@@ -245,17 +277,17 @@ async def admin_evaluate(candidate_id: str, _=Depends(verify_admin)):
         new_scores, collaboration_style, cmmi_maturity, stage_submissions
     )
 
-    # 7. 计算综合得分和级别（旧版）
-    average_score = sum([
-        scores["ai_fluency"], scores["human_ai_judgment"],
-        scores["architecture_design"], scores["hybrid_orchestration"],
-        scores["cognitive_depth"], scores["problem_modeling"]
-    ]) / 6
+    # 7. 计算综合得分和级别（使用加权平均）
+    weighted_score = sum(
+        scores[k] * behavior_analyzer.DIMENSION_WEIGHTS.get(k, 1.0/6)
+        for k in scores
+    )
+    average_score = sum(scores.values()) / len(scores)  # 保留简单平均用于兼容
 
-    comprehensive_score = average_score * 4
+    comprehensive_score = weighted_score * 4  # 映射到 0~16 分制
 
-    level = behavior_analyzer.determine_level(average_score)
-    confidence = evaluation_engine.assess_confidence(scores, average_score, contradictions)
+    level = behavior_analyzer.determine_level(weighted_score)
+    confidence = evaluation_engine.assess_confidence(scores, weighted_score, contradictions)
 
     # 保存评估结果（包含新旧评分）
     db.save_evaluation(
@@ -298,6 +330,25 @@ async def admin_get_report(candidate_id: str, _=Depends(verify_admin)):
         "evaluation": evaluation,
         "stage_submissions": stage_submissions
     }
+
+
+@app.get("/api/admin/candidates/{candidate_id}/evaluations")
+async def admin_get_evaluation_versions(candidate_id: str, _=Depends(verify_admin)):
+    """获取候选人所有评估版本"""
+    candidate = db.get_candidate_by_id(candidate_id)
+    if not candidate:
+        raise HTTPException(404, "候选人不存在")
+    versions = db.get_evaluation_versions(candidate_id)
+    return {"candidate_id": candidate_id, "versions": versions}
+
+
+@app.get("/api/admin/candidates/{candidate_id}/evaluations/{version}")
+async def admin_get_evaluation_by_version(candidate_id: str, version: int, _=Depends(verify_admin)):
+    """获取候选人指定版本的评估"""
+    evaluation = db.get_evaluation(candidate_id, version)
+    if not evaluation:
+        raise HTTPException(404, f"版本 {version} 不存在")
+    return {"candidate_id": candidate_id, "evaluation": evaluation}
 
 
 # === 启动 ===

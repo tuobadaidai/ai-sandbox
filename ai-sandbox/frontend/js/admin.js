@@ -6,24 +6,66 @@
 class AdminPanel {
   constructor() {
     this.apiBase = window.location.origin;
-    this.secret = '';
+    this.sessionId = localStorage.getItem('admin_session_id') || '';
   }
 
   /**
-   * 验证管理密码
+   * 管理员登录 - 通过 POST 请求，密码在 body 中传递
    */
   async login(secret) {
-    const resp = await fetch(`${this.apiBase}/api/admin/candidates?secret=${encodeURIComponent(secret)}`);
-    if (!resp.ok) return false;
-    this.secret = secret;
-    return true;
+    try {
+      const resp = await fetch(`${this.apiBase}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secret })
+      });
+      if (!resp.ok) return false;
+      const data = await resp.json();
+      this.sessionId = data.session_id;
+      localStorage.setItem('admin_session_id', this.sessionId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 管理员登出
+   */
+  async logout() {
+    try {
+      await fetch(`${this.apiBase}/api/admin/logout`, {
+        method: 'POST',
+        headers: { 'X-Admin-Session': this.sessionId }
+      });
+    } catch { /* ignore */ }
+    this.sessionId = '';
+    localStorage.removeItem('admin_session_id');
+  }
+
+  /**
+   * 带认证的 fetch 封装
+   */
+  async authFetch(url, options = {}) {
+    const headers = {
+      ...(options.headers || {}),
+      'X-Admin-Session': this.sessionId
+    };
+    const resp = await fetch(url, { ...options, headers });
+    if (resp.status === 401) {
+      // 会话过期，清除本地缓存
+      this.sessionId = '';
+      localStorage.removeItem('admin_session_id');
+      throw new Error('SESSION_EXPIRED');
+    }
+    return resp;
   }
 
   /**
    * 获取候选人列表
    */
   async getCandidates() {
-    const resp = await fetch(`${this.apiBase}/api/admin/candidates?secret=${encodeURIComponent(this.secret)}`);
+    const resp = await this.authFetch(`${this.apiBase}/api/admin/candidates`);
     if (!resp.ok) throw new Error('获取候选人列表失败');
     return await resp.json();
   }
@@ -32,7 +74,7 @@ class AdminPanel {
    * 获取候选人的详细行为数据
    */
   async getCandidateDetail(candidateId) {
-    const resp = await fetch(`${this.apiBase}/api/admin/candidates/${candidateId}/events?secret=${encodeURIComponent(this.secret)}`);
+    const resp = await this.authFetch(`${this.apiBase}/api/admin/candidates/${candidateId}/events`);
     if (!resp.ok) throw new Error('获取候选人详情失败');
     return await resp.json();
   }
@@ -41,7 +83,7 @@ class AdminPanel {
    * 触发评估
    */
   async evaluateCandidate(candidateId) {
-    const resp = await fetch(`${this.apiBase}/api/admin/candidates/${candidateId}/evaluate?secret=${encodeURIComponent(this.secret)}`, {
+    const resp = await this.authFetch(`${this.apiBase}/api/admin/candidates/${candidateId}/evaluate`, {
       method: 'POST'
     });
     if (!resp.ok) throw new Error('评估失败');
@@ -52,7 +94,7 @@ class AdminPanel {
    * 获取评估报告
    */
   async getReport(candidateId) {
-    const resp = await fetch(`${this.apiBase}/api/admin/candidates/${candidateId}/report?secret=${encodeURIComponent(this.secret)}`);
+    const resp = await this.authFetch(`${this.apiBase}/api/admin/candidates/${candidateId}/report`);
     if (!resp.ok) throw new Error('获取报告失败');
     return await resp.json();
   }

@@ -616,21 +616,41 @@ def _calc_problem_modeling(events: list[dict]) -> float:
 # ============================================================================
 
 
+# ============================================================================
+# 评分权重配置
+# ============================================================================
+
+# 旧六维度权重（基于维度对 AI 协同能力的重要性分配）
+DIMENSION_WEIGHTS = {
+    "ai_fluency": 0.15,         # AI 流利度：基础能力，权重适中
+    "human_ai_judgment": 0.25,  # 人机判断力：核心能力，权重最高
+    "architecture_design": 0.20, # 架构设计力：高阶能力，权重较高
+    "hybrid_orchestration": 0.15, # 混合编排力：实践能力，权重适中
+    "cognitive_depth": 0.15,    # 认知深度：潜力指标，权重适中
+    "problem_modeling": 0.10,   # 问题建模：可从其他维度侧面反映
+}
+
+
 def determine_level(average_score: float) -> str:
-    """根据平均得分判定能力等级。
+    """根据加权平均得分判定能力等级。
+
+    基于实际分布设计的阈值：
+    - L1 (入门)：候选人几乎被动接受 AI 输出，不做判断
+    - L2 (进阶)：候选人能主动使用 AI，但缺乏系统性
+    - L3 (熟练)：候选人具备结构化思维和判断力
+    - L4 (专家)：候选人能深度协作，主动质疑和迭代
 
     参数:
-        average_score: 6 维能力得分的平均值（1.0 ~ 3.5 范围）
+        average_score: 加权能力得分（1.0 ~ 4.0 范围）
 
     返回:
         等级字符串: "L1" / "L2" / "L3" / "L4"
     """
-    comprehensive = average_score * 4
-    if comprehensive <= 7:
+    if average_score < 1.8:
         return "L1"
-    elif comprehensive <= 11:
+    elif average_score < 2.5:
         return "L2"
-    elif comprehensive <= 14:
+    elif average_score < 3.2:
         return "L3"
     else:
         return "L4"
@@ -641,13 +661,16 @@ def determine_level(average_score: float) -> str:
 # ============================================================================
 
 
-def _clamp_score(score: float, min_val: float = 1.0, max_val: float = 3.5) -> float:
+def _clamp_score(score: float, min_val: float = 1.0, max_val: float = 4.0) -> float:
     """限制得分在 [min_val, max_val] 范围内，保留一位小数。
+
+    注意：max_val 从 3.5 上调到 4.0，以区分"专家"级别的候选人。
+    L4 候选人应当在多个维度达到 3.5+ 的水平。
 
     参数:
         score: 原始得分
         min_val: 最小值，默认 1.0
-        max_val: 最大值，默认 3.5
+        max_val: 最大值，默认 4.0
 
     返回:
         限制后的得分

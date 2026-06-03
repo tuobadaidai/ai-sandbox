@@ -4,7 +4,12 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from config import DATABASE_PATH, ADMIN_SECRET
+import hashlib
+import hmac
+import secrets
+import time
+
+from config import DATABASE_PATH, ADMIN_SECRET, ADMIN_SESSION_EXPIRY
 
 
 def get_connection() -> sqlite3.Connection:
@@ -56,7 +61,8 @@ def init_db():
 
         CREATE TABLE IF NOT EXISTS evaluations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            candidate_id TEXT UNIQUE NOT NULL,
+            candidate_id TEXT NOT NULL,
+            version INTEGER DEFAULT 1,
             narrative_text TEXT DEFAULT '',
             dimension_scores TEXT DEFAULT '{}',
             contradictions TEXT DEFAULT '[]',
@@ -69,9 +75,12 @@ def init_db():
             collaboration_style TEXT DEFAULT '',
             cmmi_maturity_level TEXT DEFAULT '',
             work_dna_portrait TEXT DEFAULT '',
+            algorithm_version TEXT DEFAULT 'v1',
             created_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
+
+        CREATE INDEX IF NOT EXISTS idx_eval_candidate ON evaluations(candidate_id);
 
         CREATE TABLE IF NOT EXISTS stage_submissions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,10 +95,21 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_events_candidate ON behavior_events(candidate_id);
         CREATE INDEX IF NOT EXISTS idx_events_stage ON behavior_events(candidate_id, stage);
         CREATE INDEX IF NOT EXISTS idx_ai_candidate ON ai_interactions(candidate_id);
+
+        CREATE TABLE IF NOT EXISTS admin_sessions (
+            session_id TEXT PRIMARY KEY,
+            expires_at TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
     """)
     # Migration: add new columns if upgrading from older schema
     try:
         conn.execute("ALTER TABLE evaluations ADD COLUMN work_dna_portrait TEXT DEFAULT ''")
+    except Exception:
+        pass
+    # 清理过期管理员会话
+    try:
+        conn.execute("DELETE FROM admin_sessions WHERE expires_at < ?", (str(int(time.time())),))
     except Exception:
         pass
     conn.commit()
@@ -239,6 +259,9 @@ def get_ai_interactions(candidate_id: str) -> list[dict]:
 
 # === 评估结果 ===
 
+ALGORITHM_VERSION = "v3-exec-assessment"  # 当前算法版本
+
+
 def save_evaluation(candidate_id: str, narrative: str, dimension_scores: dict,
                     contradictions: list, cognitive_profile: dict, average_score: float,
                     comprehensive_score: float, level: str, confidence: str,
@@ -246,17 +269,25 @@ def save_evaluation(candidate_id: str, narrative: str, dimension_scores: dict,
                     cmmi_maturity_level: str = None, work_dna_portrait: str = None):
     conn = get_connection()
     try:
+        # 计算版本号：该候选人的已有评估数 + 1
+        existing = conn.execute(
+            "SELECT COUNT(*) as cnt FROM evaluations WHERE candidate_id = ?",
+            (candidate_id,)
+        ).fetchone()
+        version = (existing["cnt"] if existing else 0) + 1
+
         conn.execute(
-            """INSERT OR REPLACE INTO evaluations
-            (candidate_id, narrative_text, dimension_scores, contradictions, cognitive_profile,
+            """INSERT INTO evaluations
+            (candidate_id, version, narrative_text, dimension_scores, contradictions, cognitive_profile,
              average_score, comprehensive_score, level, confidence, new_dimension_scores,
-             collaboration_style, cmmi_maturity_level, work_dna_portrait, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (candidate_id, narrative, json.dumps(dimension_scores, ensure_ascii=False),
+             collaboration_style, cmmi_maturity_level, work_dna_portrait, algorithm_version, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (candidate_id, version, narrative, json.dumps(dimension_scores, ensure_ascii=False),
              json.dumps(contradictions, ensure_ascii=False), json.dumps(cognitive_profile, ensure_ascii=False),
              average_score, comprehensive_score, level, confidence,
              json.dumps(new_dimension_scores, ensure_ascii=False) if new_dimension_scores else None,
-             collaboration_style, cmmi_maturity_level, work_dna_portrait, now_iso())
+             collaboration_style, cmmi_maturity_level, work_dna_portrait,
+             ALGORITHM_VERSION, now_iso())
         )
         conn.commit()
         update_candidate_status(candidate_id, "evaluated")
@@ -264,12 +295,20 @@ def save_evaluation(candidate_id: str, narrative: str, dimension_scores: dict,
         conn.close()
 
 
-def get_evaluation(candidate_id: str) -> Optional[dict]:
+def get_evaluation(candidate_id: str, version: int = None) -> Optional[dict]:
+    """获取候选人评估结果，默认返回最新版本。指定 version 可获取历史版本。"""
     conn = get_connection()
     try:
-        row = conn.execute(
-            "SELECT * FROM evaluations WHERE candidate_id = ?", (candidate_id,)
-        ).fetchone()
+        if version:
+            row = conn.execute(
+                "SELECT * FROM evaluations WHERE candidate_id = ? AND version = ?",
+                (candidate_id, version)
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT * FROM evaluations WHERE candidate_id = ? ORDER BY version DESC LIMIT 1",
+                (candidate_id,)
+            ).fetchone()
         if not row:
             return None
         d = dict(row)
@@ -279,6 +318,19 @@ def get_evaluation(candidate_id: str) -> Optional[dict]:
         if d.get("new_dimension_scores"):
             d["new_dimension_scores"] = json.loads(d["new_dimension_scores"])
         return d
+    finally:
+        conn.close()
+
+
+def get_evaluation_versions(candidate_id: str) -> list[dict]:
+    """获取候选人所有评估版本的摘要列表"""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, version, average_score, comprehensive_score, level, algorithm_version, created_at FROM evaluations WHERE candidate_id = ? ORDER BY version DESC",
+            (candidate_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
     finally:
         conn.close()
 
@@ -323,4 +375,61 @@ def get_all_stage_submissions(candidate_id: str) -> list[dict]:
 
 
 def verify_admin(secret: str) -> bool:
-    return secret == ADMIN_SECRET
+    """时序安全的密码比较，防止计时攻击"""
+    if not ADMIN_SECRET or not secret:
+        return False
+    return hmac.compare_digest(secret, ADMIN_SECRET)
+
+
+# === 管理员会话 ===
+
+def create_admin_session() -> str:
+    """创建管理员会话 token，返回 session_id"""
+    session_id = f"admin_{secrets.token_hex(16)}"
+    expires_at = str(int(time.time()) + ADMIN_SESSION_EXPIRY)
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO admin_sessions (session_id, expires_at) VALUES (?, ?)",
+            (session_id, expires_at)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return session_id
+
+
+def verify_admin_session(session_id: str) -> bool:
+    """验证管理员会话是否有效且未过期"""
+    if not session_id:
+        return False
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT expires_at FROM admin_sessions WHERE session_id = ?",
+            (session_id,)
+        ).fetchone()
+        if not row:
+            return False
+        expires_at = int(row["expires_at"])
+        if time.time() > expires_at:
+            # 清理过期会话
+            conn.execute("DELETE FROM admin_sessions WHERE session_id = ?", (session_id,))
+            conn.commit()
+            return False
+        return True
+    finally:
+        conn.close()
+
+
+def cleanup_expired_sessions():
+    """清理所有过期会话"""
+    conn = get_connection()
+    try:
+        conn.execute(
+            "DELETE FROM admin_sessions WHERE expires_at < ?",
+            (str(int(time.time())),)
+        )
+        conn.commit()
+    finally:
+        conn.close()
