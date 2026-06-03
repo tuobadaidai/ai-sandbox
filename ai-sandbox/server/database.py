@@ -68,6 +68,7 @@ def init_db():
             new_dimension_scores TEXT DEFAULT '{}',
             collaboration_style TEXT DEFAULT '',
             cmmi_maturity_level TEXT DEFAULT '',
+            work_dna_portrait TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (candidate_id) REFERENCES candidates(id)
         );
@@ -86,6 +87,11 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_events_stage ON behavior_events(candidate_id, stage);
         CREATE INDEX IF NOT EXISTS idx_ai_candidate ON ai_interactions(candidate_id);
     """)
+    # Migration: add new columns if upgrading from older schema
+    try:
+        conn.execute("ALTER TABLE evaluations ADD COLUMN work_dna_portrait TEXT DEFAULT ''")
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
@@ -237,20 +243,20 @@ def save_evaluation(candidate_id: str, narrative: str, dimension_scores: dict,
                     contradictions: list, cognitive_profile: dict, average_score: float,
                     comprehensive_score: float, level: str, confidence: str,
                     new_dimension_scores: dict = None, collaboration_style: str = None,
-                    cmmi_maturity_level: str = None):
+                    cmmi_maturity_level: str = None, work_dna_portrait: str = None):
     conn = get_connection()
     try:
         conn.execute(
             """INSERT OR REPLACE INTO evaluations
             (candidate_id, narrative_text, dimension_scores, contradictions, cognitive_profile,
              average_score, comprehensive_score, level, confidence, new_dimension_scores,
-             collaboration_style, cmmi_maturity_level, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             collaboration_style, cmmi_maturity_level, work_dna_portrait, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (candidate_id, narrative, json.dumps(dimension_scores, ensure_ascii=False),
              json.dumps(contradictions, ensure_ascii=False), json.dumps(cognitive_profile, ensure_ascii=False),
              average_score, comprehensive_score, level, confidence,
              json.dumps(new_dimension_scores, ensure_ascii=False) if new_dimension_scores else None,
-             collaboration_style, cmmi_maturity_level, now_iso())
+             collaboration_style, cmmi_maturity_level, work_dna_portrait, now_iso())
         )
         conn.commit()
         update_candidate_status(candidate_id, "evaluated")

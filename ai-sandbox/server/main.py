@@ -239,6 +239,12 @@ async def admin_evaluate(candidate_id: str, _=Depends(verify_admin)):
     collaboration_style = evaluation_engine.detect_collaboration_style(events, interactions)
     cmmi_maturity = evaluation_engine.detect_cmmi_maturity_level(events, interactions)
 
+    # 7. 生成 Work DNA 能力画像
+    stage_submissions = db.get_all_stage_submissions(candidate_id)
+    work_dna = evaluation_engine.generate_work_dna_portrait(
+        new_scores, collaboration_style, cmmi_maturity, stage_submissions
+    )
+
     # 7. 计算综合得分和级别（旧版）
     average_score = sum([
         scores["ai_fluency"], scores["human_ai_judgment"],
@@ -264,7 +270,8 @@ async def admin_evaluate(candidate_id: str, _=Depends(verify_admin)):
         confidence=confidence,
         new_dimension_scores=new_scores,
         collaboration_style=collaboration_style,
-        cmmi_maturity_level=cmmi_maturity
+        cmmi_maturity_level=cmmi_maturity,
+        work_dna_portrait=work_dna
     )
 
     return {

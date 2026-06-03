@@ -313,6 +313,85 @@ def detect_contradictions(events: list[dict], interactions: list[dict]) -> list[
                         )
                     ))
 
+    # ---- 7. "权变思维缺失"检测 ----
+    # 核心：检测候选人是否识别到多方矛盾并进行权衡
+    # 在公文筐任务中，8封邮件蕴含多个两难矛盾（AIvs人工、直连vs聚合、盈利vs增长、合规vs创新）
+    # 如果候选人的产出中只识别了单一维度的利益，未提及矛盾或权衡，则判定权变思维缺失
+
+    # 收集所有 AI prompt 文本，检查是否包含权衡/矛盾/多利益相关方的表述
+    all_prompt_texts = []
+    for e in events:
+        if e.get("event_type") == "AI_PROMPT_SEND":
+            meta = e.get("metadata", {}) or {}
+            pt = meta.get("prompt_text", "") or meta.get("message", "")
+            if pt:
+                all_prompt_texts.append(pt)
+
+    # 检测是否出现权衡/矛盾相关的关键表述
+    contingency_keywords = [
+        "权衡", "两难", "矛盾", "冲突", "平衡", "trade-off",
+        "利益相关方", "博弈", "让步", "折中", "权变",
+        "短期 vs", "长期 vs", "一方面", "另一方面", "但是",
+        "反对", "质疑", "风险", "代价", "取舍", "兼顾",
+        "如果……那么", "另一种可能", "不一定"
+    ]
+    contingency_count = 0
+    for text in all_prompt_texts:
+        for kw in contingency_keywords:
+            if kw in text:
+                contingency_count += 1
+                break  # 一段文本只计一次
+
+    # 检测候选人的提交内容中是否体现出对矛盾的认知
+    submissions_text = ""
+    from pathlib import Path
+    import sqlite3, json as jmod
+    try:
+        # 获取候选人ID —— 从事件中提取
+        if events:
+            cid = events[0].get("candidate_id", "")
+            if cid:
+                db_path = Path(__file__).resolve().parent.parent / "data" / "sandbox.db"
+                conn = sqlite3.connect(str(db_path))
+                rows = conn.execute(
+                    "SELECT content FROM stage_submissions WHERE candidate_id = ?",
+                    (cid,)
+                ).fetchall()
+                for r in rows:
+                    submissions_text += (r[0] or "") + " "
+                conn.close()
+    except Exception:
+        pass
+
+    # 在提交内容中也检查权衡关键词
+    submission_contingency = 0
+    for kw in contingency_keywords:
+        if kw in submissions_text:
+            submission_contingency += 1
+
+    total_contingency = contingency_count + submission_contingency
+    has_multistakeholder = any(
+        kw in " ".join(all_prompt_texts)
+        for kw in ["利益相关", "多方", "不同角度", "从……看", "对……来说"]
+    )
+
+    # 如果 prompt 不少（>=3）但缺乏权衡表述
+    if len(all_prompt_texts) >= 3 and total_contingency < 2:
+        level = "high" if total_contingency == 0 else "medium"
+        contradictions.append(Contradiction(
+            type="权变思维缺失",
+            description="在包含多方利益冲突的公文筐任务中，未表现出对矛盾关系的识别与权衡",
+            confidence=level,
+            evidence=(
+                f"AI交互{len(all_prompt_texts)}轮, "
+                f"权衡相关表述仅{total_contingency}处, "
+                f"多方利益相关方表述={'有' if has_multistakeholder else '无'}"
+            )
+        ))
+    elif total_contingency >= 5:
+        # 正向信号：表现出较强的权衡思维能力（不生成矛盾，只记录）
+        pass
+
     return contradictions
 
 
@@ -676,3 +755,161 @@ def detect_cmmi_maturity_level(events: list[dict], interactions: list[dict]) -> 
     
     # L1：默认
     return "L1 - 基础提问者"
+
+
+# ============================================================================
+# Work DNA 能力画像生成
+# ============================================================================
+
+DIMS_LABEL = {
+    "problem_definition": "问题定义能力",
+    "task_decomposition": "任务拆解能力",
+    "information_acquisition": "信息获取能力",
+    "hypothesis_construction": "假设构建能力",
+    "hypothesis_correction": "假设修正能力",
+    "integrated_judgment": "综合判断力",
+}
+
+STYLE_MAP = {
+    "Driver": "主导型协作——擅长先建立分析框架再调用AI执行细节。在信息过载场景中能保持清晰的认知主导权，但需注意避免在AI擅长的领域过度干预。",
+    "Co-worker": "协作型协同——将AI视为平等的工作伙伴，通过高频互动和联合推理持续优化产出。这种模式在复杂分析和创新任务中效率最高。",
+    "Delegator": "委托型外包——倾向于将完整任务委托给AI并接受首轮输出。在常规任务中效率较高，但在需要深度判断的场景中可能遗漏关键矛盾。",
+    "Operator": "工具型使用——主要将AI用于摘要、翻译、格式化等基础工作。未充分释放AI在高阶认知工作中的潜力。",
+}
+
+CMMI_MAP = {
+    "L1": "基础提问者——停留在简单的单一指令模式，尚未学会结构化地引导AI协同工作。",
+    "L2": "结构化指令设计者——能够为AI设定角色和输出格式，具备初步的结构化思维。",
+    "L3": "人机工作流搭建者——能将复杂任务拆分为多步骤工作流，分阶段调度AI。这标志着从会用AI到善用AI的质变。",
+    "L4": "多智能体管理者——能够引导AI扮演不同视角角色进行交叉验证和自我批判。这是高管级人机协同的关键分水岭。",
+    "L5": "人机协同体系设计者——不仅能高效协同AI，还能自主设计原则、定义信任边界、建立纠错机制。标志着具备将AI融入组织决策体系的能力。",
+}
+
+BASELINE = {
+    "problem_definition": 82,
+    "task_decomposition": 80,
+    "information_acquisition": 85,
+    "hypothesis_construction": 78,
+    "hypothesis_correction": 75,
+    "integrated_judgment": 83,
+}
+
+SUGGESTIONS = {
+    "问题定义能力": "建议在任务开始时先用自己的话重新定义问题，而非直接沿用任务描述。可以尝试问AI「这个描述背后还有哪些更深层的矛盾」。",
+    "任务拆解能力": "建议在调用AI前先将大任务拆为3-5个子任务，每个子任务单独与AI交互。",
+    "信息获取能力": "建议增加追问频率——对AI输出的关键数据和假设至少追问两次。建立先质疑再接受的习惯。",
+    "假设构建能力": "建议在信息不完整时先提出自己的假设再让AI验证，而非直接让AI给出结论。",
+    "假设修正能力": "建议在AI给出新信息后主动回顾之前的判断，有意识地做如果新信息是对的之前结论需要改什么的思维练习。",
+    "综合判断力": "建议在决策前画出利益相关方地图，对每个选项列出二阶效应和风险缓解措施后再做判断。",
+}
+
+
+def generate_work_dna_portrait(new_dimension_scores, collaboration_style, cmmi_level, stage_submissions=None):
+    """
+    生成 Work DNA 能力画像 Markdown 文案。
+    """
+    scores = new_dimension_scores or {}
+    if scores:
+        avg = sum(scores.values()) / len(scores)
+    else:
+        avg = 0
+
+    if avg >= 85:
+        tier, tier_desc = "卓越", "在面向复杂商业场景的人机协同任务中展现出顶级认知能力"
+    elif avg >= 70:
+        tier, tier_desc = "优秀", "具备扎实的人机协同框架思维，能够独立驱动AI完成高价值工作"
+    elif avg >= 55:
+        tier, tier_desc = "合格", "具备基础的人机协作能力，在特定维度上有提升空间"
+    elif avg >= 40:
+        tier, tier_desc = "发展中", "AI协同模式尚未成型，需要通过系统性训练构建方法论"
+    else:
+        tier, tier_desc = "基础", "尚未建立有效的人机协作工作范式，建议从基础提示工程培训开始"
+
+    # 优势 / 待提升
+    strengths = []
+    weaknesses = []
+    for key, label in DIMS_LABEL.items():
+        val = scores.get(key, 0)
+        if val >= 80:
+            strengths.append((label, val))
+        elif val < 50 or (not strengths and val <= 55):
+            weaknesses.append((label, val))
+    if not strengths:
+        strengths.append(("综合表现", avg))
+    if not weaknesses:
+        sorted_dims = sorted(scores.items(), key=lambda x: x[1])
+        weakest = sorted_dims[0] if sorted_dims else ("综合表现", avg)
+        weaknesses.append((DIMS_LABEL.get(weakest[0], weakest[0]), weakest[1]))
+
+    parts = []
+    parts.append("## Work DNA 能力画像")
+    parts.append("")
+    parts.append("### 总体评定：" + tier + "级别")
+    parts.append("")
+    parts.append(tier_desc + "。新六维度综合均分 **{:.1f}/100**。".format(avg))
+    parts.append("")
+
+    parts.append("### 核心能力图谱")
+    parts.append("")
+    parts.append("**优势维度：**")
+    for label, score in strengths:
+        parts.append("- **" + label + "**：" + str(score) + "分 —— 在该维度展现出显著能力优势")
+    parts.append("")
+    parts.append("**待提升维度：**")
+    for label, score in weaknesses:
+        sug = SUGGESTIONS.get(label, "建议在该维度增加刻意练习。")
+        parts.append("- **" + label + "**：" + str(score) + "分 —— " + sug)
+
+    cs = collaboration_style or "Unknown"
+    style_text = STYLE_MAP.get(cs, "未检测到明确的协作风格。")
+    parts.append("")
+    parts.append("### 人机协作风格：" + cs + "型")
+    parts.append("")
+    parts.append(style_text)
+
+    cmmi_num = cmmi_level[0:2] if cmmi_level else "L1"
+    cmmi_text = CMMI_MAP.get(cmmi_num, "当前处于 " + str(cmmi_num) + " 级。")
+    parts.append("")
+    parts.append("### AI协同成熟度：" + str(cmmi_level))
+    parts.append("")
+    parts.append(cmmi_text)
+
+    # 发展建议
+    parts.append("")
+    parts.append("### 发展建议")
+    parts.append("")
+    plan = []
+    cmmi_int = int(cmmi_num[1]) if cmmi_num and len(cmmi_num) >= 2 else 1
+    if cmmi_int <= 1:
+        plan.append("【优先】学习基础提示工程：给AI设定角色、明确输出格式和约束条件。")
+    elif cmmi_int == 2:
+        plan.append("【优先】尝试将复杂任务拆分为多个子步骤，每步单独与AI交互，构建人机工作流。")
+    elif cmmi_int == 3:
+        plan.append("【优先】练习让AI扮演不同角色对同一问题进行辩论和交叉验证。")
+    elif cmmi_int >= 4:
+        plan.append("【优先】将个人AI使用经验总结为组织级的AI协同操作手册，推动团队能力升级。")
+    if scores:
+        weakest_dim = min(scores, key=scores.get)
+        weakest_label = DIMS_LABEL.get(weakest_dim, weakest_dim)
+        plan.append("最弱维度是「" + weakest_label + "」（" + str(scores[weakest_dim]) + "分），建议作为下季度重点发展目标。")
+    if cs == "Delegator":
+        plan.append("委托型风格效率占优，但建议对AI关键输出至少做1-2处实质性修改以提升深度。")
+    elif cs == "Operator":
+        plan.append("建议每周尝试1-2次将AI用于分析型、判断型任务，逐步拓展协同深度。")
+    for s in plan:
+        parts.append("- " + s)
+
+    # 对标表
+    parts.append("")
+    parts.append("### 高绩效人才行为库对标")
+    parts.append("")
+    parts.append("| 维度 | 当前 | 高绩效基准 | 差距 |")
+    parts.append("|------|------|-----------|------|")
+    for key, label in DIMS_LABEL.items():
+        current = scores.get(key, 0)
+        baseline = BASELINE.get(key, 85)
+        gap = baseline - current
+        gap_str = "-" + str(gap) if gap > 0 else "+" + str(-gap)
+        parts.append("| " + label + " | " + str(current) + " | " + str(baseline) + " | " + gap_str + " |")
+
+    return "\n".join(parts)
