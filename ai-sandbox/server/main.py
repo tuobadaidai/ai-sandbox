@@ -454,6 +454,15 @@ async def admin_get_active_task(_=Depends(verify_admin)):
     return json.loads(task_path.read_text(encoding="utf-8"))
 
 
+@app.get("/api/admin/config/tasks/{filename}")
+async def admin_get_task(filename: str, _=Depends(verify_admin)):
+    """获取指定题本内容"""
+    task_path = config.TASKS_DIR / filename
+    if not task_path.exists():
+        raise HTTPException(404, f"题本文件 {filename} 不存在")
+    return json.loads(task_path.read_text(encoding="utf-8"))
+
+
 @app.put("/api/admin/config/tasks/active")
 async def admin_set_active_task(request: Request, _=Depends(verify_admin)):
     """切换活跃题本"""

@@ -268,7 +268,7 @@ class ConfigPanel {
             </div>
           `).join('')}
         </div>
-        <div id="task-editor" style="display:none;margin-top:20px"></div>
+        <div id="task-editor" style="display:none;margin-top:20px;position:relative;z-index:10"></div>
       </div>
     `;
   }
@@ -321,24 +321,29 @@ class ConfigPanel {
   }
 
   async editTask(filename) {
-    const editorDiv = document.getElementById('task-editor');
+    let editorDiv = document.getElementById('task-editor');
+    if (!editorDiv) {
+      this.activeTab = 'tasks';
+      await this.loadTab();
+      editorDiv = document.getElementById('task-editor');
+    }
     if (!editorDiv) return;
     editorDiv.style.display = 'block';
+    setTimeout(() => editorDiv.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
 
     try {
       // 读取题本详情
       const resp = await this.authFetch(`${this.apiBase}/api/admin/config/tasks`);
       const data = await resp.json();
       const taskPath = `${this.apiBase}/../tasks/${filename}`;
-      // 通过直接获取文件内容
-      const taskResp = await this.authFetch(`${this.apiBase}/api/admin/config/tasks/active`);
-      // 用简单方式：直接用 fetch 读 tasks 目录
-      const fileResp = await fetch(`${this.apiBase}/tasks/${filename}`);
+      // 读取题本内容
+      const fileResp = await this.authFetch(`${this.apiBase}/api/admin/config/tasks/${encodeURIComponent(filename)}`);
       let content = '';
       if (fileResp.ok) {
-        content = await fileResp.text();
+        const taskData = await fileResp.json();
+        content = JSON.stringify(taskData, null, 2);
       } else {
-        // fallback：从列表 API 获取活跃题本
+        // fallback: 从题本列表中查找
         content = JSON.stringify(data, null, 2);
       }
 
@@ -380,9 +385,26 @@ class ConfigPanel {
   }
 
   showNewTaskForm() {
-    const editorDiv = document.getElementById('task-editor');
-    if (!editorDiv) return;
+    let editorDiv = document.getElementById('task-editor');
+    if (!editorDiv) {
+      // task-editor 不存在，重新渲染题本Tab后再试
+      this.activeTab = 'tasks';
+      this.loadTab().then(() => {
+        editorDiv = document.getElementById('task-editor');
+        if (editorDiv) {
+          this._fillNewTaskForm(editorDiv);
+        } else {
+          this.showToast('❌ 无法打开新建表单');
+        }
+      });
+      return;
+    }
+    this._fillNewTaskForm(editorDiv);
+  }
+
+  _fillNewTaskForm(editorDiv) {
     editorDiv.style.display = 'block';
+    setTimeout(() => editorDiv.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
 
     const template = JSON.stringify({
       "name": "新题本",

@@ -615,16 +615,19 @@ body {
 /* 管理后台子面板 — 默认隐藏，通过 .admin-panel-active 切换 */
 #admin-list,
 #admin-detail,
-#admin-report {
+#admin-report,
+#admin-config {
   display: none;
 }
 
 #admin-list.admin-panel-active,
 #admin-detail.admin-panel-active,
-#admin-report.admin-panel-active {
+#admin-report.admin-panel-active,
+#admin-config.admin-panel-active {
   display: flex;
   flex: 1;
   min-height: 0;
+  height: 0;
   flex-direction: column;
   overflow: hidden;
 }
