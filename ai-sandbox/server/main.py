@@ -27,7 +27,7 @@ app = FastAPI(title="AI 沙盒行为洞察系统", version="1.0.0")
 _cors_origins = config.CORS_ORIGINS.split(",") if config.CORS_ORIGINS else []
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins if _cors_origins else [],  # 无配置则不允许跨域
+    allow_origins=_cors_origins if _cors_origins else ["*"],  # 无配置则允许所有来源（开发模式）
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Content-Type", "Authorization", "X-Token", "X-Admin-Session"],
     allow_credentials=True if _cors_origins else False,
@@ -234,6 +234,9 @@ async def admin_login(data: AdminLoginRequest):
 @app.post("/api/admin/logout")
 async def admin_logout(session_id: str = Header(..., alias="X-Admin-Session")):
     """管理员登出，销毁会话"""
+    # 验证 session 是否有效，防止恶意删除任意 session
+    if not db.verify_admin_session(session_id):
+        return {"status": "invalid_session"}
     with db.db_conn() as conn:
         conn.execute("DELETE FROM admin_sessions WHERE session_id = ?", (session_id,))
         conn.commit()

@@ -31,7 +31,10 @@ else
   # 优先使用自建 AI 网关，其次本地 Ollama
   export AI_BASE_URL="${AI_BASE_URL:-http://dragon-open-api.didainternal.com/v1}"
   export AI_MODEL="${AI_MODEL:-qwen3-plus}"
-  export AI_API_KEY="${AI_API_KEY:-ded2b4df-7589-479f-8ff1-c03ec4010aba}"
+  if [ -z "$AI_API_KEY" ]; then
+    echo "  ⚠️  警告: 未设置 AI_API_KEY 环境变量，AI 功能将不可用"
+    echo "     请执行: export AI_API_KEY=your-api-key"
+  fi
 
   if [ "$AI_BASE_URL" = "http://localhost:11434/v1" ]; then
     echo "  → 使用本地 Ollama 后端"

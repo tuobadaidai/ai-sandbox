@@ -18,6 +18,8 @@ DECOMPOSITION_KEYWORDS = ["首先", "第一步", "框架", "拆解", "分", "步
 
 CLARIFICATION_KEYWORDS = ["?", "？", "什么", "哪些", "如何", "怎么", "是否", "请确认", "确认一下"]
 
+VERIFICATION_KEYWORDS = ["验证", "检查", "确认", "数据", "来源", "准确", "真实", "核实", "查证"]
+
 
 # ============================================================================
 # 1. 行为事件 → 叙事文本
@@ -662,38 +664,11 @@ DIMENSION_WEIGHTS = {
 }
 
 
-def _determine_level_original(average_score: float) -> str:
-    """原始硬编码阈值版本（保留作为 fallback）"""
-    if average_score < 1.8:
-        return "L1"
-    elif average_score < 2.5:
-        return "L2"
-    elif average_score < 3.2:
-        return "L3"
-    else:
-        return "L4"
-
-
 # ============================================================================
 # 内部辅助函数
 # ============================================================================
-
-
-def _clamp_score(score: float, min_val: float = 1.0, max_val: float = 4.0) -> float:
-    """限制得分在 [min_val, max_val] 范围内，保留一位小数。
-
-    注意：max_val 从 3.5 上调到 4.0，以区分"专家"级别的候选人。
-    L4 候选人应当在多个维度达到 3.5+ 的水平。
-
-    参数:
-        score: 原始得分
-        min_val: 最小值，默认 1.0
-        max_val: 最大值，默认 4.0
-
-    返回:
-        限制后的得分
-    """
-    return round(max(min_val, min(max_val, score)), 1)
+# 注意：_clamp_score 和 determine_level 在文件末尾有使用运行时配置的新版本，
+# 此处不再重复定义以避免覆盖。
 
 
 # ============================================================================

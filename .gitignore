@@ -6,3 +6,7 @@ __pycache__/
 *.db-wal
 .DS_Store
 .workbuddy/
+
+# 运行时配置（可能含 API Key）
+ai-sandbox/server/data/config_store.json
+ai-sandbox/server/data/config_store.tmp

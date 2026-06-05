@@ -46,14 +46,32 @@ SYSTEM_PROMPT = (
 # 全局 Provider 单例（延迟初始化）
 # ============================================================================
 _provider: Optional[BaseAIProvider] = None
+_provider_signature: Optional[str] = None  # 追踪当前 provider 的配置指纹
 
 
 def _get_provider() -> BaseAIProvider:
-    """获取全局 AI Provider 单例"""
-    global _provider
-    if _provider is None:
-        _provider = create_provider()
+    """获取全局 AI Provider 单例（配置变更时自动重建）"""
+    global _provider, _provider_signature
+    # 计算当前配置指纹：provider type + 关键参数
+    cfg = get_active_provider_config()
+    current_sig = (
+        cfg.get("provider", ""),
+        cfg.get("model", ""),
+        cfg.get("base_url", ""),
+    )
+    if _provider is not None and _provider_signature == current_sig:
+        return _provider
+    # 配置已变更或首次创建，重建 provider
+    _provider = create_provider()
+    _provider_signature = current_sig
     return _provider
+
+
+def reset_provider():
+    """强制重置 Provider 单例（供配置变更时调用）"""
+    global _provider, _provider_signature
+    _provider = None
+    _provider_signature = None
 
 
 async def chat_with_ai(

@@ -344,22 +344,15 @@ def detect_contradictions(events: list[dict], interactions: list[dict]) -> list[
 
     # 检测候选人的提交内容中是否体现出对矛盾的认知
     submissions_text = ""
-    from pathlib import Path
-    import sqlite3, json as jmod
     try:
         # 获取候选人ID —— 从事件中提取
         if events:
             cid = events[0].get("candidate_id", "")
             if cid:
-                db_path = Path(__file__).resolve().parent.parent / "data" / "sandbox.db"
-                conn = sqlite3.connect(str(db_path))
-                rows = conn.execute(
-                    "SELECT content FROM stage_submissions WHERE candidate_id = ?",
-                    (cid,)
-                ).fetchall()
-                for r in rows:
-                    submissions_text += (r[0] or "") + " "
-                conn.close()
+                import database as db
+                submissions = db.get_all_stage_submissions(cid)
+                for s in submissions:
+                    submissions_text += (s.get("content", "") or "") + " "
     except Exception:
         pass
 

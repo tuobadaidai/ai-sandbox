@@ -342,6 +342,12 @@ def update_runtime_config(key: str, value: Any):
         _runtime_overrides[key] = value
     elif key in ("dashscope", "ollama", "params"):
         _runtime_overrides[key] = value
+    # provider 或连接参数变更时，重置缓存的 provider 单例
+    try:
+        from .ai_service import reset_provider
+        reset_provider()
+    except ImportError:
+        pass
 
 
 def get_active_provider_config() -> dict:
