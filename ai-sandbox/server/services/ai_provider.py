@@ -6,7 +6,7 @@ import asyncio
 import json
 import random
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 

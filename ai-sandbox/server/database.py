@@ -152,6 +152,26 @@ def init_db():
             conn.execute("ALTER TABLE evaluations ADD COLUMN work_dna_portrait TEXT DEFAULT ''")
         except Exception:
             pass
+        try:
+            conn.execute("ALTER TABLE evaluations ADD COLUMN version INTEGER DEFAULT 1")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE evaluations ADD COLUMN new_dimension_scores TEXT DEFAULT '{}' ")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE evaluations ADD COLUMN collaboration_style TEXT DEFAULT ''")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE evaluations ADD COLUMN cmmi_maturity_level TEXT DEFAULT ''")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE evaluations ADD COLUMN algorithm_version TEXT DEFAULT 'v1'")
+        except Exception:
+            pass
         # 清理过期管理员会话
         try:
             conn.execute("DELETE FROM admin_sessions WHERE expires_at < ?", (str(int(time.time())),))

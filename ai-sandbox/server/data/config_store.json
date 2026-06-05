@@ -13,8 +13,8 @@
       "base_url": "http://localhost:11434/v1"
     },
     "params": {
-      "temperature": 0.6,
       "max_tokens": 2048,
+      "temperature": 0.6,
       "timeout": 60
     },
     "hallucination_rate": 0.15
@@ -75,5 +75,5 @@
       ]
     }
   },
-  "updated_at": "2026-06-04T00:47:22.444294"
+  "updated_at": "2026-06-05T18:20:45.004521"
 }

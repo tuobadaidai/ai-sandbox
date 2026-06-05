@@ -219,13 +219,136 @@
     let currentDocId = null; // 当前选中的文档ID
     let companyBgExpanded = true; // 公司背景面板是否展开
 
+    // ==================== 状态持久化 ====================
+    function saveState() {
+      if (currentToken) {
+        sessionStorage.setItem('sandbox_state', JSON.stringify({
+          token: currentToken,
+          stage: currentStage,
+          stageContents: stageContents,
+          docContents: docContents,
+          currentDocId: currentDocId
+        }));
+      }
+    }
+
+    function clearSavedState() {
+      sessionStorage.removeItem('sandbox_state');
+    }
+
+    function restoreSavedState() {
+      const saved = sessionStorage.getItem('sandbox_state');
+      if (!saved) return null;
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        sessionStorage.removeItem('sandbox_state');
+        return null;
+      }
+    }
+
+    // ==================== 心跳机制 ====================
+    let heartbeatInterval = null;
+
+    function startHeartbeat() {
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      heartbeatInterval = setInterval(() => {
+        if (currentToken) {
+          fetch(`${API_BASE}/api/heartbeat/${currentToken}`, { method: 'POST' })
+            .catch(err => console.warn('[心跳] 发送失败:', err));
+        }
+      }, 60000); // 60秒
+    }
+
+    function stopHeartbeat() {
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+      }
+    }
+
+    // ==================== 页面恢复 ====================
+    async function restoreSandboxSession(saved) {
+      try {
+        // 验证 token 是否仍然有效
+        const resp = await fetch(`${API_BASE}/api/sandbox/${saved.token}`);
+        if (!resp.ok) {
+          clearSavedState();
+          location.hash = ''; route(); return;
+        }
+
+        const data = await resp.json();
+
+        // 恢复状态
+        currentToken = saved.token;
+        currentStage = saved.stage || 1;
+        stageContents = saved.stageContents || {}; if (data.stage_submissions) { stageContents = { ...data.stage_submissions }; }
+        docContents = saved.docContents || {};
+        currentDocId = saved.currentDocId || null;
+        taskConfig = data.task;
+
+        // 防御性清理：确保候选人前端不包含评估维度信息
+        if (taskConfig && taskConfig.stages) {
+          taskConfig.stages.forEach(s => { delete s.evaluation_focus; });
+        }
+
+        // 显示沙盒视图
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById('view-sandbox').classList.add('active');
+
+        // 重新初始化 tracker 和 AI chat
+        if (!window.tracker) {
+          window.tracker = new BehaviorTracker(data.candidate_id, data.session_id);
+        }
+        window.tracker.setToken(currentToken);
+        window.tracker.setStage(currentStage);
+
+        if (!window.aiChat) {
+          window.aiChat = new AIChat(document.getElementById('view-sandbox'), window.tracker);
+        }
+        window.aiChat.setToken(currentToken);
+        window.aiChat.setStage(currentStage);
+
+        // 恢复 UI
+        document.getElementById('candidate-name-display').textContent = data.candidate_name;
+        renderCandidateContext(taskConfig.candidate_context);
+        loadStage(currentStage);
+        startTimer();
+        setupStageTimers();
+        setupEditorTracking();
+        setupChatInput();
+        startHeartbeat();
+        saveState();
+
+        console.log('[恢复] 沙盒会话已从 sessionStorage 恢复');
+      } catch (e) {
+        console.error('[恢复] 恢复失败:', e);
+        clearSavedState();
+        location.hash = ''; route();
+      }
+    }
+
     // ==================== 路由 ====================
     function route() {
       const hash = location.hash;
 
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
 
-      if (hash.startsWith('#admin')) {
+      if (hash.startsWith('#sandbox')) {
+        // 如果有活跃 token，直接显示沙盒
+        if (currentToken) {
+          document.getElementById('view-sandbox').classList.add('active');
+          return;
+        }
+        // 尝试从 sessionStorage 恢复
+        const saved = restoreSavedState();
+        if (saved && saved.token) {
+          restoreSandboxSession(saved);
+          return;
+        }
+        // 无法恢复，回到入口
+        location.hash = ''; route(); return;
+      } else if (hash.startsWith('#admin')) {
         document.getElementById('view-admin').classList.add('active');
       } else {
         document.getElementById('view-entry').classList.add('active');
@@ -233,7 +356,34 @@
     }
 
     window.addEventListener('hashchange', route);
-    route();
+
+    // ==================== visibilitychange 监听 ====================
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        // 页面隐藏时保存状态
+        saveState();
+      } else {
+        // 页面恢复可见时
+        if (currentToken) {
+          // 确保沙盒视图仍然显示
+          if (!document.getElementById('view-sandbox').classList.contains('active')) {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.getElementById('view-sandbox').classList.add('active');
+          }
+          // 发送心跳确认会话有效
+          fetch(`${API_BASE}/api/heartbeat/${currentToken}`, { method: 'POST' }).catch(() => {});
+        }
+      }
+    });
+
+    // ==================== 页面加载恢复 ====================
+    window.addEventListener('DOMContentLoaded', () => {
+      const saved = restoreSavedState();
+      if (saved && saved.token && !location.hash.startsWith('#admin')) {
+        location.hash = '#sandbox';
+      }
+      route();
+    });
 
     // ==================== 沙盒入口 ====================
     async function startSandbox() {
@@ -308,6 +458,11 @@
 
         // 10. 绑定聊天输入
         setupChatInput();
+
+        // 11. 设置 hash、保存状态、启动心跳
+        location.hash = '#sandbox';
+        saveState();
+        startHeartbeat();
 
       } catch (e) {
         document.getElementById('entry-form').style.display = 'block';
@@ -742,6 +897,7 @@
             window.tracker.trackTextInput(textarea.value.substring(0, 200), 'editor');
           }
           lastLength = len;
+          saveState(); // 防抖保存状态
         }, 500);
       });
 
@@ -824,6 +980,7 @@
 
         stageContents[currentStage] = stageAllContent;
         showToast('Stage ' + currentStage + ' 已提交保存！');
+        saveState();
       } catch (e) {
         showToast('提交失败: ' + e.message);
       }
@@ -887,10 +1044,13 @@
 
         window.tracker.stopFlushing();
         clearInterval(timerInterval);
+        stopHeartbeat();
+        clearSavedState();
 
         // 隐藏所有 view，显示完成页
         document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
         document.getElementById('view-complete').classList.add('active');
+        location.hash = '';
 
       } catch (e) {
         showToast('提交失败: ' + e.message);

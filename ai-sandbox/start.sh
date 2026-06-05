@@ -28,18 +28,22 @@ if [ -n "$DASHSCOPE_API_KEY" ]; then
   echo "  → 使用 DashScope (阿里云) 后端"
   echo "  → 模型: ${DASHSCOPE_MODEL:-qwen-plus}"
 else
-  # 默认使用本地 Ollama
-  export AI_BASE_URL="${AI_BASE_URL:-http://localhost:11434/v1}"
-  export AI_MODEL="${AI_MODEL:-qwen2:1.5b}"
-  export AI_API_KEY="${AI_API_KEY:-ollama}"
-  echo "  → 使用本地 Ollama 后端"
+  # 优先使用自建 AI 网关，其次本地 Ollama
+  export AI_BASE_URL="${AI_BASE_URL:-http://dragon-open-api.didainternal.com/v1}"
+  export AI_MODEL="${AI_MODEL:-qwen3-plus}"
+  export AI_API_KEY="${AI_API_KEY:-ded2b4df-7589-479f-8ff1-c03ec4010aba}"
+
+  if [ "$AI_BASE_URL" = "http://localhost:11434/v1" ]; then
+    echo "  → 使用本地 Ollama 后端"
+    # 检测 Ollama 是否运行
+    if ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+      echo "  ⚠️  警告: Ollama 服务未运行，请先执行 'ollama serve'"
+    fi
+  else
+    echo "  → 使用自建 AI 网关后端"
+  fi
   echo "  → 模型: $AI_MODEL"
   echo "  → 地址: $AI_BASE_URL"
-  
-  # 检测 Ollama 是否运行
-  if ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
-    echo "  ⚠️  警告: Ollama 服务未运行，请先执行 'ollama serve'"
-  fi
 fi
 
 # === 启动服务 ===
